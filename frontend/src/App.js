@@ -1,63 +1,86 @@
-import React, { useState, useEffect } from 'react';
-import api from './services/api';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ProtectedRoute } from './components/common/ProtectedRoute';
 
-function App() {
-  const [serverStatus, setServerStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+// Auth Pages
+import Login from './pages/auth/Login';
+import Register from './pages/auth/Register';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import AdminLogin from './pages/auth/AdminLogin';
 
-  useEffect(() => {
-    api.get('/health/')
-      .then((response) => {
-        setServerStatus(response.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(err.message || 'Failed to connect to backend server');
-        setLoading(false);
-      });
-  }, []);
-
+// Placeholder Authenticated Views for Phase 2 Verification
+const CandidateDashboardPlaceholder = () => {
+  const { user, logout } = useAuth();
   return (
     <div className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-md-7">
-          <div className="card shadow-sm border-0">
-            <div className="card-body p-4 text-center">
-              <h2 className="card-title text-primary fw-bold mb-3">
-                <i className="bi bi-briefcase me-2"></i>CareerAI Workspace
-              </h2>
-              <p className="text-muted mb-4">Phase 1: Project Initialization & Connectivity Verification</p>
-
-              {loading && (
-                <div className="spinner-border text-primary" role="status">
-                  <span className="visually-hidden">Connecting...</span>
-                </div>
-              )}
-
-              {error && (
-                <div className="alert alert-danger d-flex align-items-center justify-content-center" role="alert">
-                  <i className="bi bi-exclamation-triangle-fill me-2"></i>
-                  <div>{error} (Ensure Django server is running on port 8000)</div>
-                </div>
-              )}
-
-              {serverStatus && (
-                <div className="alert alert-success text-start" role="alert">
-                  <h5 className="alert-heading fw-bold mb-2">
-                    <i className="bi bi-check-circle-fill me-2"></i>Backend Connected
-                  </h5>
-                  <hr />
-                  <p className="mb-1"><strong>Status:</strong> {serverStatus.status}</p>
-                  <p className="mb-1"><strong>Service:</strong> {serverStatus.system}</p>
-                  <p className="mb-0"><strong>Database:</strong> {serverStatus.database}</p>
-                </div>
-              )}
-            </div>
-          </div>
+      <div className="card shadow-sm p-4 text-center">
+        <h3 className="fw-bold text-primary mb-2">Candidate Dashboard (Phase 2 Verified)</h3>
+        <p className="text-muted">Welcome, {user?.username} ({user?.email})</p>
+        <div>
+          <button className="btn btn-outline-danger btn-sm" onClick={logout}>
+            Logout
+          </button>
         </div>
       </div>
     </div>
+  );
+};
+
+const AdminDashboardPlaceholder = () => {
+  const { user, logout } = useAuth();
+  return (
+    <div className="container py-5">
+      <div className="card shadow-sm p-4 text-center bg-dark text-white">
+        <h3 className="fw-bold text-info mb-2">Administrator Panel (Phase 2 Verified)</h3>
+        <p className="text-secondary">Logged in as Super Administrator: {user?.email}</p>
+        <div>
+          <button className="btn btn-outline-light btn-sm" onClick={logout}>
+            Logout
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <Routes>
+          {/* Public Authentication Routes */}
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/admin-login" element={<AdminLogin />} />
+
+          {/* Protected Candidate Routes */}
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <CandidateDashboardPlaceholder />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Protected Admin Routes */}
+          <Route
+            path="/admin"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminDashboardPlaceholder />
+              </ProtectedRoute>
+            }
+          />
+
+          {/* Default Redirect */}
+          <Route path="/" element={<Navigate to="/register" replace />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }
 
