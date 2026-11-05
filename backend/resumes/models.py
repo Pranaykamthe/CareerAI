@@ -14,16 +14,27 @@ def validate_resume_file(file):
         raise ValidationError("File size exceeds 10MB limit.")
 
 def resume_upload_path(instance, filename):
-    # Store per user: resumes/user_<id>/<filename>
     return f"resumes/user_{instance.user.id}/{filename}"
 
 class Resume(models.Model):
+    PARSE_STATUS_CHOICES = (
+        ('pending', 'Pending'),
+        ('parsed', 'Parsed'),
+        ('failed', 'Failed'),
+    )
+
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='resumes')
     file = models.FileField(upload_to=resume_upload_path, validators=[validate_resume_file])
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField(help_text="File size in bytes")
     file_type = models.CharField(max_length=10, help_text="pdf or docx")
     is_primary = models.BooleanField(default=False)
+    
+    # Phase 5: Structured Parsing Fields
+    raw_text = models.TextField(blank=True, default='')
+    parse_status = models.CharField(max_length=20, choices=PARSE_STATUS_CHOICES, default='pending')
+    parsed_data = models.JSONField(default=dict, blank=True)
+    
     uploaded_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -34,16 +45,13 @@ class Resume(models.Model):
         return f"{self.file_name} ({self.user.email})"
 
     def save(self, *args, **kwargs):
-        # If this is the user's first resume, automatically make it primary
         if not self.pk and not Resume.objects.filter(user=self.user).exists():
             self.is_primary = True
         elif self.is_primary:
-            # Demote other resumes if this one is set as primary
             Resume.objects.filter(user=self.user, is_primary=True).exclude(pk=self.pk).update(is_primary=False)
         super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
-        # Clean up physical storage file on deletion
         if self.file and os.path.isfile(self.file.path):
             try:
                 os.remove(self.file.path)
