@@ -10,25 +10,31 @@ import Register from './pages/auth/Register';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import AdminLogin from './pages/auth/AdminLogin';
 
-// Profile Page
+// Candidate Pages
 import Profile from './pages/candidate/Profile';
+import ResumeManagement from './pages/candidate/ResumeManagement';
 
-// Candidate Dashboard View
+// Candidate Dashboard Hub
 const CandidateDashboard = () => {
   const { user } = useAuth();
   return (
     <div className="min-vh-100 bg-light">
       <Navbar />
       <div className="container py-5">
-        <div className="card shadow-sm border-0 p-4 rounded-3 text-center bg-white">
+        <div className="card shadow-sm border-0 p-4 rounded-3 text-center bg-white mb-4">
           <div className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3">
             <i className="bi bi-speedometer2 fs-2"></i>
           </div>
           <h3 className="fw-bold text-dark mb-1">Welcome back, {user?.username}!</h3>
-          <p className="text-muted small mb-4">Your candidate hub is active. Keep your profile and skills updated.</p>
+          <p className="text-muted small mb-4">
+            Upload and manage your resumes, maintain your candidate profile, and explore career matches.
+          </p>
           <div className="d-flex justify-content-center gap-3">
-            <Link to="/profile" className="btn btn-primary-custom">
-              <i className="bi bi-person-circle me-1"></i> Manage Candidate Profile
+            <Link to="/resumes" className="btn btn-primary-custom">
+              <i className="bi bi-cloud-arrow-up me-1"></i> Upload & Manage Resumes
+            </Link>
+            <Link to="/profile" className="btn btn-outline-primary">
+              <i className="bi bi-person-circle me-1"></i> Edit Profile
             </Link>
           </div>
         </div>
@@ -80,6 +86,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
                 <Profile />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/resumes"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <ResumeManagement />
               </ProtectedRoute>
             }
           />
