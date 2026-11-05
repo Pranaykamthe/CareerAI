@@ -6,6 +6,11 @@ export const resumeService = {
     return response.data;
   },
 
+  getResumeById: async (id) => {
+    const response = await api.get(`/resumes/${id}/`);
+    return response.data;
+  },
+
   uploadResume: async (file, onUploadProgress) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -16,6 +21,11 @@ export const resumeService = {
       },
       onUploadProgress,
     });
+    return response.data;
+  },
+
+  parseResume: async (id) => {
+    const response = await api.post(`/resumes/${id}/parse/`);
     return response.data;
   },
 
