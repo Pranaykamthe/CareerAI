@@ -1,13 +1,54 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.contrib.auth.password_validation import validate_password
-from .models import User
+from .models import User, Profile
+
+class ProfileSerializer(serializers.ModelSerializer):
+    completion_percentage = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Profile
+        fields = (
+            'id',
+            'headline',
+            'target_role',
+            'bio',
+            'experience_years',
+            'location',
+            'linkedin_url',
+            'github_url',
+            'portfolio_url',
+            'skills_list',
+            'education',
+            'experience',
+            'completion_percentage',
+            'updated_at',
+        )
+
+    def validate_skills_list(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Skills must be a list of strings.")
+        return [str(skill).strip() for skill in value if str(skill).strip()]
+
+    def validate_education(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Education must be a list of entries.")
+        return value
+
+    def validate_experience(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("Experience must be a list of entries.")
+        return value
+
 
 class UserSerializer(serializers.ModelSerializer):
+    profile = ProfileSerializer(read_only=True)
+
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'role', 'phone', 'created_at')
-        read_only_fields = ('id', 'created_at')
+        fields = ('id', 'username', 'email', 'role', 'phone', 'created_at', 'profile')
+        read_only_fields = ('id', 'created_at', 'profile')
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, validators=[validate_password])
@@ -36,6 +77,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             phone=validated_data.get('phone', '')
         )
         return user
+
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
     @classmethod
