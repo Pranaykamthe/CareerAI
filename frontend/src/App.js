@@ -14,8 +14,9 @@ import AdminLogin from './pages/auth/AdminLogin';
 import Profile from './pages/candidate/Profile';
 import ResumeManagement from './pages/candidate/ResumeManagement';
 import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
+import JobDescriptions from './pages/candidate/JobDescriptions';
 
-// Candidate Dashboard Hub
+// Candidate Dashboard Overview
 const CandidateDashboard = () => {
   const { user } = useAuth();
   return (
@@ -28,7 +29,7 @@ const CandidateDashboard = () => {
           </div>
           <h3 className="fw-bold text-dark mb-1">Welcome back, {user?.username}!</h3>
           <p className="text-muted small mb-4">
-            Manage your profile, upload resumes, evaluate your deterministic ATS score, and explore job matches[cite: 1, 9].
+            Manage your candidate profile, optimize your ATS resume score, and explore matched job descriptions[cite: 2].
           </p>
           <div className="d-flex flex-wrap justify-content-center gap-3">
             <Link to="/resumes" className="btn btn-primary-custom">
@@ -36,6 +37,9 @@ const CandidateDashboard = () => {
             </Link>
             <Link to="/resume-analyzer" className="btn btn-outline-primary">
               <i className="bi bi-bar-chart-line me-1"></i> ATS Resume Analyzer
+            </Link>
+            <Link to="/jobs" className="btn btn-outline-primary">
+              <i className="bi bi-briefcase me-1"></i> Browse & Parse Jobs
             </Link>
             <Link to="/profile" className="btn btn-outline-secondary">
               <i className="bi bi-person-circle me-1"></i> Edit Profile
@@ -47,18 +51,20 @@ const CandidateDashboard = () => {
   );
 };
 
-// Admin Dashboard Placeholder
+// Admin Dashboard Overview
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   return (
-    <div className="container py-5">
-      <div className="card shadow-sm p-4 text-center bg-dark text-white rounded-3">
-        <h3 className="fw-bold text-info mb-2">Administrator Panel</h3>
-        <p className="text-secondary">Logged in as Super Administrator: {user?.email}</p>
-        <div>
-          <button className="btn btn-outline-light btn-sm" onClick={logout}>
-            Logout
-          </button>
+    <div className="min-vh-100 bg-dark text-white py-5">
+      <div className="container">
+        <div className="card shadow-sm p-4 text-center bg-dark text-white border-secondary rounded-3">
+          <h3 className="fw-bold text-info mb-2">Administrator Panel</h3>
+          <p className="text-secondary">Logged in as Super Administrator: {user?.email}</p>
+          <div>
+            <button className="btn btn-outline-light btn-sm" onClick={logout}>
+              <i className="bi bi-box-arrow-right me-1"></i> Logout
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -109,6 +115,22 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/jobs"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <JobDescriptions />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/job-descriptions"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <JobDescriptions />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Admin Routes */}
           <Route
@@ -120,7 +142,7 @@ function App() {
             }
           />
 
-          {/* Fallback Redirects */}
+          {/* Default & Fallback Redirects */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
