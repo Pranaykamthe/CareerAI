@@ -17,24 +17,15 @@ def resume_upload_path(instance, filename):
     return f"resumes/user_{instance.user.id}/{filename}"
 
 class Resume(models.Model):
-    PARSE_STATUS_CHOICES = (
-        ('pending', 'Pending'),
-        ('parsed', 'Parsed'),
-        ('failed', 'Failed'),
-    )
-
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='resumes')
     file = models.FileField(upload_to=resume_upload_path, validators=[validate_resume_file])
     file_name = models.CharField(max_length=255)
     file_size = models.PositiveIntegerField(help_text="File size in bytes")
     file_type = models.CharField(max_length=10, help_text="pdf or docx")
-    is_primary = models.BooleanField(default=False)
-    
-    # Phase 5: Structured Parsing Fields
     raw_text = models.TextField(blank=True, default='')
-    parse_status = models.CharField(max_length=20, choices=PARSE_STATUS_CHOICES, default='pending')
     parsed_data = models.JSONField(default=dict, blank=True)
-    
+    is_parsed = models.BooleanField(default=False)
+    is_primary = models.BooleanField(default=False)
     uploaded_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -58,3 +49,26 @@ class Resume(models.Model):
             except OSError:
                 pass
         super().delete(*args, **kwargs)
+
+
+class ResumeAnalysis(models.Model):
+    resume = models.OneToOneField(Resume, on_delete=models.CASCADE, related_name='analysis')
+    overall_score = models.IntegerField(default=0)  # 0 to 100
+    
+    # Sub-scores breakdown
+    ats_compatibility_score = models.IntegerField(default=0)  # 0 to 100
+    keyword_score = models.IntegerField(default=0)            # 0 to 100
+    content_quality_score = models.IntegerField(default=0)    # 0 to 100
+    measurable_impact_score = models.IntegerField(default=0)  # 0 to 100
+    formatting_score = models.IntegerField(default=0)         # 0 to 100
+
+    # Structured feedback items
+    strengths = models.JSONField(default=list, blank=True)
+    weaknesses = models.JSONField(default=list, blank=True)
+    recommendations = models.JSONField(default=list, blank=True)
+    metrics_summary = models.JSONField(default=dict, blank=True)
+
+    analyzed_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Analysis of {self.resume.file_name} - Score: {self.overall_score}/100"

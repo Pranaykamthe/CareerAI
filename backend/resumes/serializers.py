@@ -1,9 +1,29 @@
 from rest_framework import serializers
-from .models import Resume
+from .models import Resume, ResumeAnalysis
+
+class ResumeAnalysisSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ResumeAnalysis
+        fields = [
+            'id',
+            'overall_score',
+            'ats_compatibility_score',
+            'keyword_score',
+            'content_quality_score',
+            'measurable_impact_score',
+            'formatting_score',
+            'strengths',
+            'weaknesses',
+            'recommendations',
+            'metrics_summary',
+            'analyzed_at'
+        ]
+        read_only_fields = ['id', 'analyzed_at']
+
 
 class ResumeSerializer(serializers.ModelSerializer):
-    download_url = serializers.SerializerMethodField()
-    extracted_skills = serializers.SerializerMethodField()
+    analysis = ResumeAnalysisSerializer(read_only=True)
+    file_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Resume
@@ -13,27 +33,30 @@ class ResumeSerializer(serializers.ModelSerializer):
             'file_name',
             'file_size',
             'file_type',
-            'is_primary',
-            'parse_status',
+            'file_url',
             'parsed_data',
-            'extracted_skills',
+            'is_parsed',
+            'is_primary',
+            'analysis',
             'uploaded_at',
-            'updated_at',
-            'download_url',
+            'updated_at'
         ]
         read_only_fields = [
-            'id', 'file_name', 'file_size', 'file_type', 
-            'is_primary', 'parse_status', 'parsed_data', 
-            'uploaded_at', 'updated_at', 'download_url'
+            'id',
+            'file_name',
+            'file_size',
+            'file_type',
+            'file_url',
+            'parsed_data',
+            'is_parsed',
+            'is_primary',
+            'analysis',
+            'uploaded_at',
+            'updated_at'
         ]
 
-    def get_download_url(self, obj):
+    def get_file_url(self, obj):
         request = self.context.get('request')
         if obj.file and request:
             return request.build_absolute_uri(obj.file.url)
         return None
-
-    def get_extracted_skills(self, obj):
-        if obj.parsed_data and isinstance(obj.parsed_data, dict):
-            return obj.parsed_data.get('skills', [])
-        return []

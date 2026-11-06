@@ -3,6 +3,7 @@ import re
 import docx
 from PyPDF2 import PdfReader
 
+
 class ResumeParser:
     """
     Deterministic extraction engine for PDF and DOCX resumes.
@@ -111,7 +112,6 @@ class ResumeParser:
         linkedin = re.findall(linkedin_pattern, self.raw_text)
         github = re.findall(github_pattern, self.raw_text)
 
-        # Reconstruct full phone matches if captured as groups
         cleaned_phones = []
         for p in re.finditer(phone_pattern, self.raw_text):
             val = p.group(0).strip()
@@ -131,10 +131,8 @@ class ResumeParser:
         lowered_text = f" {self.cleaned_text.lower()} "
 
         for skill in self.SKILL_DATABASE:
-            # Match skill surrounded by non-alphanumeric chars or boundaries
             pattern = r'(?:^|[^a-zA-Z0-9])' + re.escape(skill) + r'(?:$|[^a-zA-Z0-9])'
             if re.search(pattern, lowered_text):
-                # Standardize casing for UI presentation
                 found_skills.add(skill.title() if len(skill) > 4 else skill.upper())
 
         return sorted(list(found_skills))
@@ -148,7 +146,6 @@ class ResumeParser:
         for line in lines:
             line_lower = line.lower().strip(':').strip()
             
-            # Check if this line is a heading
             matched_header = None
             if len(line.split()) <= 4:
                 for section_name, aliases in self.COMMON_SECTIONS.items():
@@ -173,3 +170,14 @@ class ResumeParser:
             "word_count": len(self.cleaned_text.split()),
             "character_count": len(self.cleaned_text)
         }
+
+
+def extract_resume_data(file_path, file_type=None):
+    """
+    Helper function expected by views.py.
+    Initializes ResumeParser, runs parsing pipeline, and includes raw_text.
+    """
+    parser = ResumeParser(file_path)
+    data = parser.parse()
+    data['raw_text'] = parser.raw_text
+    return data
