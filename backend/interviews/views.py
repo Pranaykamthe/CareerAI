@@ -1,6 +1,8 @@
+import json
 import random
 from django.utils import timezone
 from django.db.models import Q
+from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -14,9 +16,14 @@ from .serializers import (
     SubmitAnswerRequestSerializer,
 )
 from .seed_questions import seed_default_questions
+from ai_services.factory import get_ai_service
 
 
 class QuestionBankListView(generics.ListAPIView):
+    """
+    Lists all active curated interview questions with optional filtering by
+    category, difficulty tier, text search, or bookmarked items.
+    """
     serializer_class = QuestionBankSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -46,12 +53,18 @@ class QuestionBankListView(generics.ListAPIView):
 
 
 class QuestionDetailView(generics.RetrieveAPIView):
+    """
+    Retrieves a single question bank record with its talking points and model answer.
+    """
     queryset = QuestionBank.objects.filter(is_active=True)
     serializer_class = QuestionBankSerializer
     permission_classes = [permissions.IsAuthenticated]
 
 
 class ToggleBookmarkView(APIView):
+    """
+    Toggles a question in or out of the authenticated candidate's bookmarked list.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
@@ -73,6 +86,9 @@ class ToggleBookmarkView(APIView):
 
 
 class SeedQuestionsView(APIView):
+    """
+    Seeds the question bank database with curated baseline interview questions.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
@@ -82,7 +98,8 @@ class SeedQuestionsView(APIView):
 
 class StartInterviewSessionView(APIView):
     """
-    Initializes a new interview session and selects questions matching the target criteria.
+    Initializes a new mock interview session and assembles questions matching
+    the target role, format track, and difficulty tier.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -96,7 +113,7 @@ class StartInterviewSessionView(APIView):
         difficulty = data['difficulty']
         total_questions = data['total_questions']
 
-        # Query pool of questions
+        # 1. Query pool of active questions
         pool = QuestionBank.objects.filter(is_active=True)
         if category != 'Mixed':
             pool = pool.filter(category=category)
@@ -108,21 +125,25 @@ class StartInterviewSessionView(APIView):
         selected_questions = list(pool)
         random.shuffle(selected_questions)
 
-        # Fallback if question bank is not fully populated
+        # 2. Fallback if matching pool does not fulfill required question count
         if len(selected_questions) < total_questions:
             remaining_needed = total_questions - len(selected_questions)
-            fallback_qs = list(QuestionBank.objects.filter(is_active=True).exclude(id__in=[q.id for q in selected_questions]))
+            fallback_qs = list(
+                QuestionBank.objects.filter(is_active=True).exclude(
+                    id__in=[q.id for q in selected_questions]
+                )
+            )
             random.shuffle(fallback_qs)
             selected_questions.extend(fallback_qs[:remaining_needed])
 
-        # If still empty (e.g. fresh database before seed), insert emergency baseline questions
+        # 3. Emergency baseline population if database has not yet been seeded
         if not selected_questions:
             seed_default_questions()
             selected_questions = list(QuestionBank.objects.filter(is_active=True)[:total_questions])
 
         selected_questions = selected_questions[:total_questions]
 
-        # Create session
+        # 4. Create InterviewSession record
         session = InterviewSession.objects.create(
             user=request.user,
             role_target=role_target,
@@ -133,7 +154,7 @@ class StartInterviewSessionView(APIView):
             status='in_progress'
         )
 
-        # Create turns
+        # 5. Create InterviewTurns sequentially
         for index, q in enumerate(selected_questions, start=1):
             InterviewTurn.objects.create(
                 session=session,
@@ -150,14 +171,20 @@ class StartInterviewSessionView(APIView):
 
 
 class InterviewSessionListView(generics.ListAPIView):
+    """
+    Lists past and current mock interview sessions for the logged-in candidate.
+    """
     serializer_class = InterviewSessionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return InterviewSession.objects.filter(user=self.request.user)
+        return InterviewSession.objects.filter(user=self.request.user).order_by('-created_at')
 
 
 class InterviewSessionDetailView(generics.RetrieveAPIView):
+    """
+    Retrieves the full details and turn transcript of a specific interview session.
+    """
     serializer_class = InterviewSessionSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -167,62 +194,147 @@ class InterviewSessionDetailView(generics.RetrieveAPIView):
 
 class SubmitAnswerView(APIView):
     """
-    Records a candidate's answer for the current question turn and advances the session state.
+    Phase 12: Evaluates the candidate's submitted answer in real time using
+    the modular AI service engine (Groq/Gemini with deterministic fallback).
+    Persists evaluation metrics (score, feedback, model answer) onto InterviewTurn,
+    recalculates session averages, and advances session progression.
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
-        try:
-            session = InterviewSession.objects.get(pk=pk, user=request.user)
-        except InterviewSession.DoesNotExist:
-            return Response({'detail': 'Interview session not found.'}, status=status.HTTP_404_NOT_FOUND)
+        session = get_object_or_404(InterviewSession, pk=pk, user=request.user)
 
-        if session.status != 'in_progress':
+        if session.status in ['completed', 'Completed', 'cancelled']:
             return Response(
                 {'detail': f'Cannot submit answer to a session that is {session.status}.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        serializer = SubmitAnswerRequestSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        # Accept payload from either turn-based or sequential submissions
+        turn_id = request.data.get('turn_id')
+        candidate_answer = (
+            request.data.get('candidate_answer') or request.data.get('answer', '')
+        ).strip()
+        time_spent_seconds = request.data.get('time_spent_seconds') or request.data.get(
+            'time_taken_seconds', 0
+        )
 
-        # Identify current turn
-        turns = session.turns.order_by('turn_number')
-        unanswered_turn = turns.filter(is_answered=False).first()
-
-        if not unanswered_turn:
-            session.complete_session()
+        if not candidate_answer:
             return Response(
-                {'detail': 'All questions have already been answered.', 'session': InterviewSessionSerializer(session).data},
-                status=status.HTTP_200_OK
+                {'detail': 'Please provide an answer before submitting.'},
+                status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Record answer
-        unanswered_turn.candidate_answer = serializer.validated_data['answer']
-        unanswered_turn.time_taken_seconds = serializer.validated_data.get('time_taken_seconds', 0)
-        unanswered_turn.is_answered = True
-        unanswered_turn.submitted_at = timezone.now()
-        unanswered_turn.save()
-
-        # Advance index
-        session.current_question_index += 1
-        if session.current_question_index >= session.total_questions:
-            session.complete_session()
+        # Identify target turn
+        if turn_id:
+            turn = get_object_or_404(InterviewTurn, pk=turn_id, session=session)
         else:
-            session.save(update_fields=['current_question_index'])
+            turns = session.turns.order_by('turn_number')
+            turn = turns.filter(is_answered=False).first()
+            if not turn:
+                if hasattr(session, 'complete_session'):
+                    session.complete_session()
+                else:
+                    session.status = 'completed'
+                    session.save(update_fields=['status'])
+                return Response(
+                    {
+                        'detail': 'All questions have already been answered.',
+                        'session': InterviewSessionSerializer(session, context={'request': request}).data,
+                    },
+                    status=status.HTTP_200_OK,
+                )
 
-        return Response({
-            'message': 'Answer submitted successfully.',
-            'turn': {
-                'turn_number': unanswered_turn.turn_number,
-                'is_answered': True,
-                'candidate_answer': unanswered_turn.candidate_answer
+        # 1. Run AI / Heuristic Fallback Evaluation
+        ai_engine = get_ai_service()
+        ideal_points = (
+            turn.question.ideal_points if turn.question and hasattr(turn.question, 'ideal_points') else []
+        )
+        sample_answer = (
+            turn.question.sample_answer if turn.question and hasattr(turn.question, 'sample_answer') else ''
+        )
+        difficulty = getattr(turn, 'difficulty', session.difficulty)
+
+        evaluation = ai_engine.evaluate_answer(
+            question_text=turn.question_text,
+            category=turn.category,
+            difficulty=difficulty,
+            ideal_points=ideal_points,
+            sample_answer=sample_answer,
+            candidate_answer=candidate_answer,
+            role_target=session.role_target,
+        )
+
+        # 2. Persist turn evaluation fields
+        turn.candidate_answer = candidate_answer
+        turn.time_taken_seconds = int(time_spent_seconds)
+        if hasattr(turn, 'time_spent_seconds'):
+            turn.time_spent_seconds = int(time_spent_seconds)
+        turn.is_answered = True
+        turn.submitted_at = timezone.now()
+        turn.ai_score = evaluation.get('score', 70)
+
+        feedback_data = {
+            'summary': evaluation.get('feedback', ''),
+            'strengths': evaluation.get('strengths', []),
+            'weaknesses': evaluation.get('weaknesses', []),
+            'provider': evaluation.get('provider', 'CareerAI Engine'),
+        }
+        turn.ai_feedback = json.dumps(feedback_data)
+        turn.better_answer = evaluation.get('better_answer', '')
+        turn.save()
+
+        # 3. Advance question index and check session completion
+        all_turns = session.turns.all()
+        answered_turns = all_turns.filter(is_answered=True)
+        all_completed = answered_turns.count() >= session.total_questions
+
+        # Compute aggregate overall score
+        scores = [t.ai_score for t in answered_turns if t.ai_score is not None]
+        session.overall_score = round(sum(scores) / len(scores)) if scores else 0
+
+        if all_completed:
+            if hasattr(session, 'complete_session'):
+                session.complete_session()
+            session.status = 'completed'
+            session.completed_at = timezone.now()
+            session.current_question_index = session.total_questions
+            session.save()
+        else:
+            session.current_question_index = answered_turns.count()
+            session.status = 'in_progress'
+            session.save(update_fields=['current_question_index', 'status', 'overall_score'])
+
+        # 4. Return unified response compatible with Phase 11 & Phase 12 frontends
+        return Response(
+            {
+                'message': 'Answer submitted and evaluated successfully.',
+                'detail': 'Answer submitted and evaluated successfully.',
+                'turn_id': turn.id,
+                'ai_score': turn.ai_score,
+                'feedback': feedback_data,
+                'better_answer': turn.better_answer,
+                'is_session_completed': all_completed,
+                'overall_score': session.overall_score,
+                'turn': {
+                    'id': turn.id,
+                    'turn_number': turn.turn_number,
+                    'is_answered': True,
+                    'candidate_answer': turn.candidate_answer,
+                    'ai_score': turn.ai_score,
+                    'ai_feedback': turn.ai_feedback,
+                    'better_answer': turn.better_answer,
+                },
+                'session': InterviewSessionSerializer(session, context={'request': request}).data,
             },
-            'session': InterviewSessionSerializer(session, context={'request': request}).data
-        })
+            status=status.HTTP_200_OK,
+        )
 
 
 class CancelInterviewSessionView(APIView):
+    """
+    Cancels an in-progress interview session.
+    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
