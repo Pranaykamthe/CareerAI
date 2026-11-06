@@ -17,6 +17,7 @@ import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
 import Applications from './pages/candidate/Applications';
+import QuestionBank from './pages/candidate/QuestionBank';
 
 // Candidate Dashboard Overview
 const CandidateDashboard = () => {
@@ -25,29 +26,38 @@ const CandidateDashboard = () => {
     <div className="min-vh-100 bg-light">
       <Navbar />
       <div className="container py-5">
-        <div className="card shadow-sm border-0 p-4 rounded-3 text-center bg-white mb-4">
-          <div className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3">
+        <div className="card shadow-sm border-0 p-4 p-md-5 rounded-4 text-center bg-white mb-4">
+          <div
+            className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3 align-items-center justify-content-center"
+            style={{ width: '64px', height: '64px' }}
+          >
             <i className="bi bi-speedometer2 fs-2"></i>
           </div>
-          <h3 className="fw-bold text-dark mb-1">Welcome back, {user?.username}!</h3>
-          <p className="text-muted small mb-4">
-            Manage your candidate profile, optimize your ATS resume score, and explore matched job opportunities.
+          <h2 className="fw-bold text-dark mb-2">Welcome back, {user?.username || 'Candidate'}!</h2>
+          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '600px' }}>
+            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities, and practice interview questions.
           </p>
-          <div className="d-flex flex-wrap justify-content-center gap-3">
-            <Link to="/resumes" className="btn btn-primary-custom">
-              <i className="bi bi-cloud-arrow-up me-1"></i> Upload & Manage Resumes
+          <div className="d-flex flex-wrap justify-content-center gap-2">
+            <Link to="/resumes" className="btn btn-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-cloud-arrow-up"></i> Upload & Manage Resumes
             </Link>
-            <Link to="/resume-analyzer" className="btn btn-outline-primary">
-              <i className="bi bi-bar-chart-line me-1"></i> ATS Resume Analyzer
+            <Link to="/resume-analyzer" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-bar-chart-line"></i> ATS Resume Analyzer
             </Link>
-            <Link to="/jobs" className="btn btn-outline-primary">
-              <i className="bi bi-briefcase me-1"></i> Browse & Parse Jobs
+            <Link to="/jobs" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-briefcase"></i> Browse Jobs
             </Link>
-            <Link to="/job-matching" className="btn btn-outline-success">
-              <i className="bi bi-bullseye me-1"></i> View Job Matches
+            <Link to="/job-matching" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-bullseye"></i> Job Matches
             </Link>
-            <Link to="/profile" className="btn btn-outline-secondary">
-              <i className="bi bi-person-circle me-1"></i> Edit Profile
+            <Link to="/applications" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-kanban"></i> Applications
+            </Link>
+            <Link to="/question-bank" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-collection-play-fill"></i> Question Bank
+            </Link>
+            <Link to="/profile" className="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-person-circle"></i> Edit Profile
             </Link>
           </div>
         </div>
@@ -152,6 +162,22 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/applications"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <Applications />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/question-bank"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <QuestionBank />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Protected Admin Routes */}
           <Route
@@ -159,15 +185,6 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard />
-              </ProtectedRoute>
-            }
-          />
-
-          <Route
-            path="/applications"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <Applications />
               </ProtectedRoute>
             }
           />

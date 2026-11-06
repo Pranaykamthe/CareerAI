@@ -59,6 +59,11 @@ export const Navbar = () => {
               </Link>
             </li>
             <li className="nav-item">
+              <Link className={`nav-link ${isActive('/question-bank')}`} to="/question-bank">
+                <i className="bi bi-collection-play-fill me-1"></i> Question Bank
+              </Link>
+            </li>
+            <li className="nav-item">
               <Link className={`nav-link ${isActive('/profile')}`} to="/profile">
                 <i className="bi bi-person-circle me-1"></i> Profile
               </Link>
@@ -66,7 +71,7 @@ export const Navbar = () => {
           </ul>
 
           <div className="d-flex align-items-center gap-3">
-            {/* Clickable Profile Section */}
+            {/* Clickable Profile Navigation Section */}
             <Link
               to="/profile"
               className="d-flex align-items-center gap-2 text-decoration-none link-dark"
@@ -92,7 +97,7 @@ export const Navbar = () => {
               </div>
             </Link>
 
-            {/* Logout Button */}
+            {/* Logout Action */}
             <button className="btn btn-outline-danger btn-sm" onClick={logout} title="Sign Out">
               <i className="bi bi-box-arrow-right"></i>
             </button>
