@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     'resumes',
     'jobs',
     'applications',
+    'interviews',
 ]
 
 # Set Custom User Model for Authentication
