@@ -52,7 +52,7 @@ const MockInterview = () => {
 
   // 2. Timer Lifecycle
   useEffect(() => {
-    if (activeSession && activeSession.status === 'in_progress') {
+    if (activeSession && activeSession.status === 'in_progress' && !latestFeedback) {
       timerRef.current = setInterval(() => {
         setSecondsElapsed((prev) => prev + 1);
       }, 1000);
@@ -62,7 +62,7 @@ const MockInterview = () => {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [activeSession]);
+  }, [activeSession, latestFeedback]);
 
   const formatTimer = (totalSec) => {
     const mins = Math.floor(totalSec / 60);
@@ -125,6 +125,7 @@ const MockInterview = () => {
         score: res.ai_score ?? res.turn?.ai_score ?? 75,
         feedback: feedbackObj,
         better_answer: res.better_answer || res.turn?.better_answer || '',
+        isCompleted: res.is_session_completed,
       });
 
       // Update Session
@@ -150,8 +151,10 @@ const MockInterview = () => {
     if (nextTurn) {
       setCurrentTurn(nextTurn);
     } else {
-      // All answered
+      // Mark session as completed and show summary
       setCurrentTurn(null);
+      setActiveSession((prev) => ({ ...prev, status: 'completed' }));
+      loadPastSessions();
     }
   };
 
@@ -170,7 +173,7 @@ const MockInterview = () => {
   };
 
   // Calculate Metrics
-  const completedSessions = recentSessions.filter((s) => s.status === 'completed');
+  const completedSessions = recentSessions.filter((s) => s.status === 'completed' || s.status === 'Completed');
   const avgScore = completedSessions.length
     ? Math.round(
         completedSessions.reduce((acc, curr) => acc + (curr.overall_score || 0), 0) / completedSessions.length
@@ -179,7 +182,6 @@ const MockInterview = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      {/* 1. Global Navbar */}
       <Navbar />
 
       <div className="container py-4">
@@ -297,11 +299,16 @@ const MockInterview = () => {
 
               {/* Phase 12 AI Evaluation Feedback Display */}
               {latestFeedback && (
-                <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+                <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4 border-top border-4 border-success">
                   <div className="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
-                    <h5 className="fw-bold text-dark mb-0">
-                      <i className="bi bi-cpu-fill text-primary me-2"></i>Real-Time AI Evaluation
-                    </h5>
+                    <div>
+                      <h5 className="fw-bold text-dark mb-1">
+                        <i className="bi bi-cpu-fill text-primary me-2"></i>Real-Time AI Evaluation
+                      </h5>
+                      <span className="badge bg-light text-secondary border">
+                        Evaluated by: <strong>{latestFeedback.feedback?.provider || 'CareerAI Engine'}</strong>
+                      </span>
+                    </div>
                     <div className="d-flex align-items-center gap-2">
                       <span className="small text-muted">Turn Score:</span>
                       <span
@@ -321,7 +328,7 @@ const MockInterview = () => {
                   {/* Feedback Summary */}
                   <div className="p-3 bg-light rounded-3 mb-3">
                     <div className="small fw-bold text-dark mb-1">Evaluator Feedback:</div>
-                    <p className="small text-muted mb-0">
+                    <p className="small text-dark mb-0">
                       {latestFeedback.feedback?.summary || 'Good attempt providing structured context.'}
                     </p>
                   </div>
@@ -362,7 +369,7 @@ const MockInterview = () => {
                   {latestFeedback.better_answer && (
                     <div className="border rounded-3 p-3 bg-white mb-4">
                       <div className="small fw-bold text-primary mb-1">
-                        <i className="bi bi-stars me-1"></i> Model / Ideal Talking Points:
+                        <i className="bi bi-stars me-1"></i> Suggested Model Answer:
                       </div>
                       <p className="small text-muted mb-0">{latestFeedback.better_answer}</p>
                     </div>
@@ -370,37 +377,7 @@ const MockInterview = () => {
 
                   <div className="text-end">
                     <button className="btn btn-primary px-4" onClick={handleProceedNext}>
-                      Next Question <i className="bi bi-chevron-right ms-1"></i>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Completion Screen if no more turns */}
-              {!currentTurn && !latestFeedback && (
-                <div className="card border-0 shadow-sm rounded-4 bg-white p-5 text-center mb-4">
-                  <div
-                    className="rounded-circle bg-success bg-opacity-10 text-success mx-auto d-flex align-items-center justify-content-center mb-3"
-                    style={{ width: '70px', height: '70px', fontSize: '32px' }}
-                  >
-                    <i className="bi bi-trophy-fill"></i>
-                  </div>
-                  <h3 className="fw-bold text-dark mb-2">Mock Interview Completed!</h3>
-                  <p className="text-muted small mb-4">
-                    All {activeSession.total_questions} questions have been answered and evaluated.
-                  </p>
-                  <div className="d-flex justify-content-center gap-3">
-                    <button
-                      className="btn btn-primary"
-                      onClick={() => {
-                        setSelectedReviewSession(activeSession);
-                        setActiveSession(null);
-                      }}
-                    >
-                      <i className="bi bi-journal-text me-1"></i> View Full Session Transcript
-                    </button>
-                    <button className="btn btn-outline-secondary" onClick={() => setActiveSession(null)}>
-                      Start Another Session
+                      {latestFeedback.isCompleted ? 'View Final Report' : 'Next Question'} <i className="bi bi-chevron-right ms-1"></i>
                     </button>
                   </div>
                 </div>
@@ -468,7 +445,6 @@ const MockInterview = () => {
                 <h4 className="fw-bold text-dark mb-4">Configure Your Interview Session</h4>
 
                 <form onSubmit={handleStartSession}>
-                  {/* Target Job Role */}
                   <div className="mb-3">
                     <label className="form-label small fw-semibold text-dark">Target Job Role</label>
                     <input
@@ -482,7 +458,6 @@ const MockInterview = () => {
                   </div>
 
                   <div className="row g-3 mb-3">
-                    {/* Category Track */}
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold text-dark">Interview Track</label>
                       <select
@@ -497,7 +472,6 @@ const MockInterview = () => {
                       </select>
                     </div>
 
-                    {/* Difficulty Tier */}
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold text-dark">Difficulty Level</label>
                       <select
@@ -512,7 +486,6 @@ const MockInterview = () => {
                     </div>
                   </div>
 
-                  {/* Question Count Selector */}
                   <div className="mb-4">
                     <label className="form-label small fw-semibold text-dark d-block mb-2">
                       Number of Questions
@@ -661,7 +634,9 @@ const MockInterview = () => {
                   </div>
                   <span
                     className={`badge px-3 py-2 fs-6 ${
-                      selectedReviewSession.status === 'completed' ? 'bg-success' : 'bg-secondary'
+                      selectedReviewSession.status === 'completed' || selectedReviewSession.status === 'Completed'
+                        ? 'bg-success'
+                        : 'bg-secondary'
                     }`}
                   >
                     {selectedReviewSession.status}

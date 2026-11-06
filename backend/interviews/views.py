@@ -292,20 +292,18 @@ class SubmitAnswerView(APIView):
         # Compute aggregate overall score
         scores = [t.ai_score for t in answered_turns if t.ai_score is not None]
         session.overall_score = round(sum(scores) / len(scores)) if scores else 0
+        session.current_question_index = answered_turns.count()
 
         if all_completed:
-            if hasattr(session, 'complete_session'):
-                session.complete_session()
-            session.status = 'completed'
             session.completed_at = timezone.now()
-            session.current_question_index = session.total_questions
-            session.save()
+            # Retain in_progress so frontend can render the evaluation result card for the final turn
+            session.status = 'in_progress'
+            session.save(update_fields=['current_question_index', 'status', 'overall_score', 'completed_at'])
         else:
-            session.current_question_index = answered_turns.count()
             session.status = 'in_progress'
             session.save(update_fields=['current_question_index', 'status', 'overall_score'])
 
-        # 4. Return unified response compatible with Phase 11 & Phase 12 frontends
+        # 4. Return unified response
         return Response(
             {
                 'message': 'Answer submitted and evaluated successfully.',

@@ -6,14 +6,18 @@ export const Navbar = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
 
-  const isActive = (path) => (location.pathname === path ? 'active fw-semibold text-primary' : 'text-dark');
+  const isActive = (path) =>
+    location.pathname === path ? 'active fw-bold text-primary border-bottom border-2 border-primary' : 'text-dark';
 
   return (
-    <nav className="navbar navbar-expand-lg bg-white border-bottom sticky-top py-2 px-3 px-md-4 shadow-sm">
-      <div className="container-fluid">
-        <Link className="navbar-brand d-flex align-items-center text-primary fw-bold fs-4" to="/dashboard">
+    <nav className="navbar navbar-expand-xl bg-white border-bottom sticky-top py-2 px-3 px-lg-4 shadow-sm">
+      <div className="container-fluid px-0">
+        {/* Brand Logo */}
+        <Link className="navbar-brand d-flex align-items-center text-primary fw-bold fs-4 me-3 text-nowrap" to="/dashboard">
           <i className="bi bi-layers-fill me-2"></i>CareerAI
         </Link>
+
+        {/* Mobile / Narrow Screen Hamburger */}
         <button
           className="navbar-toggler"
           type="button"
@@ -26,57 +30,53 @@ export const Navbar = () => {
           <span className="navbar-toggler-icon"></span>
         </button>
 
+        {/* Navigation Links */}
         <div className="collapse navbar-collapse" id="careeraiNav">
-          <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-3 gap-lg-1">
+          <ul className="navbar-nav me-auto mb-2 mb-xl-0 gap-1 small">
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/dashboard')}`} to="/dashboard">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/dashboard')}`} to="/dashboard">
                 <i className="bi bi-grid-1x2-fill me-1"></i> Dashboard
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/resumes')}`} to="/resumes">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/resumes')}`} to="/resumes">
                 <i className="bi bi-file-earmark-person me-1"></i> Resumes
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/resume-analyzer')}`} to="/resume-analyzer">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/resume-analyzer')}`} to="/resume-analyzer">
                 <i className="bi bi-speedometer2 me-1"></i> ATS Analyzer
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/jobs')}`} to="/jobs">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/jobs')}`} to="/jobs">
                 <i className="bi bi-briefcase me-1"></i> Jobs
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/job-matching')}`} to="/job-matching">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/job-matching')}`} to="/job-matching">
                 <i className="bi bi-bullseye me-1"></i> Job Matching
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/applications')}`} to="/applications">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/applications')}`} to="/applications">
                 <i className="bi bi-kanban me-1"></i> Applications
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/question-bank')}`} to="/question-bank">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/question-bank')}`} to="/question-bank">
                 <i className="bi bi-collection-play-fill me-1"></i> Question Bank
               </Link>
             </li>
             <li className="nav-item">
-              <Link className={`nav-link ${isActive('/mock-interview')}`} to="/mock-interview">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/mock-interview')}`} to="/mock-interview">
                 <i className="bi bi-mic-fill me-1"></i> Mock Interview
-              </Link>
-            </li>
-            <li className="nav-item">
-              <Link className={`nav-link ${isActive('/profile')}`} to="/profile">
-                <i className="bi bi-person-circle me-1"></i> Profile
               </Link>
             </li>
           </ul>
 
-          <div className="d-flex align-items-center gap-3">
-            {/* Clickable Profile Navigation Section */}
+          {/* User Profile & Logout */}
+          <div className="d-flex align-items-center gap-3 ms-xl-2 text-nowrap">
             <Link
               to="/profile"
               className="d-flex align-items-center gap-2 text-decoration-none link-dark"
@@ -84,14 +84,14 @@ export const Navbar = () => {
               style={{ cursor: 'pointer' }}
             >
               <div className="text-end d-none d-sm-block">
-                <div className="small fw-bold text-dark">{user?.username || 'Candidate'}</div>
+                <div className="small fw-bold text-dark lh-sm">{user?.username || 'Candidate'}</div>
                 <div className="text-muted" style={{ fontSize: '11px' }}>{user?.email}</div>
               </div>
               <div
                 className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold shadow-sm"
                 style={{
-                  width: '38px',
-                  height: '38px',
+                  width: '36px',
+                  height: '36px',
                   fontSize: '14px',
                   transition: 'transform 0.15s ease-in-out',
                 }}
@@ -102,8 +102,7 @@ export const Navbar = () => {
               </div>
             </Link>
 
-            {/* Logout Action */}
-            <button className="btn btn-outline-danger btn-sm" onClick={logout} title="Sign Out">
+            <button className="btn btn-outline-danger btn-sm py-1 px-2" onClick={logout} title="Sign Out">
               <i className="bi bi-box-arrow-right"></i>
             </button>
           </div>
