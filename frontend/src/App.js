@@ -15,6 +15,7 @@ import Profile from './pages/candidate/Profile';
 import ResumeManagement from './pages/candidate/ResumeManagement';
 import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 import JobDescriptions from './pages/candidate/JobDescriptions';
+import JobMatching from './pages/candidate/JobMatching';
 
 // Candidate Dashboard Overview
 const CandidateDashboard = () => {
@@ -29,7 +30,7 @@ const CandidateDashboard = () => {
           </div>
           <h3 className="fw-bold text-dark mb-1">Welcome back, {user?.username}!</h3>
           <p className="text-muted small mb-4">
-            Manage your candidate profile, optimize your ATS resume score, and explore matched job descriptions[cite: 2].
+            Manage your candidate profile, optimize your ATS resume score, and explore matched job opportunities.
           </p>
           <div className="d-flex flex-wrap justify-content-center gap-3">
             <Link to="/resumes" className="btn btn-primary-custom">
@@ -40,6 +41,9 @@ const CandidateDashboard = () => {
             </Link>
             <Link to="/jobs" className="btn btn-outline-primary">
               <i className="bi bi-briefcase me-1"></i> Browse & Parse Jobs
+            </Link>
+            <Link to="/job-matching" className="btn btn-outline-success">
+              <i className="bi bi-bullseye me-1"></i> View Job Matches
             </Link>
             <Link to="/profile" className="btn btn-outline-secondary">
               <i className="bi bi-person-circle me-1"></i> Edit Profile
@@ -128,6 +132,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
                 <JobDescriptions />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/job-matching"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <JobMatching />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/matches"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <JobMatching />
               </ProtectedRoute>
             }
           />

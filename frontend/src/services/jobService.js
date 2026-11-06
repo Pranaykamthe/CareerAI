@@ -35,4 +35,17 @@ export const jobService = {
     const response = await api.post('/jobs/seed-defaults/');
     return response.data;
   },
+
+  // Phase 8: Matching Endpoints
+  getMatches: async (resumeId = null) => {
+    const params = resumeId ? { resume_id: resumeId } : {};
+    const response = await api.get('/jobs/matches/', { params });
+    return response.data;
+  },
+
+  matchSingleJob: async (jobId, resumeId = null) => {
+    const payload = resumeId ? { resume_id: resumeId } : {};
+    const response = await api.post(`/jobs/${jobId}/match/`, payload);
+    return response.data;
+  },
 };
