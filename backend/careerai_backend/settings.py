@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     # Local Apps
     'accounts',
     'resumes',
+    'jobs',
 ]
 
 # Set Custom User Model for Authentication
