@@ -296,7 +296,7 @@ const Profile = () => {
                       type="text"
                       name="phone"
                       className="form-control"
-                      placeholder="+1 (555) 000-0000"
+                      placeholder="+91 00000 00000"
                       value={userData.phone || ''}
                       onChange={handleUserChange}
                     />
@@ -307,7 +307,7 @@ const Profile = () => {
                       type="text"
                       name="location"
                       className="form-control"
-                      placeholder="e.g. San Francisco, CA"
+                      placeholder="e.g. Mumbai, Maharashtra"
                       value={profileData.location}
                       onChange={handleProfileChange}
                     />

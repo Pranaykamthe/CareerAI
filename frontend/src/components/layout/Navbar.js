@@ -66,16 +66,33 @@ export const Navbar = () => {
           </ul>
 
           <div className="d-flex align-items-center gap-3">
-            <div className="text-end d-none d-sm-block">
-              <div className="small fw-bold text-dark">{user?.username || 'Candidate'}</div>
-              <div className="text-muted" style={{ fontSize: '11px' }}>{user?.email}</div>
-            </div>
-            <div
-              className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold"
-              style={{ width: '38px', height: '38px', fontSize: '14px' }}
+            {/* Clickable Profile Section */}
+            <Link
+              to="/profile"
+              className="d-flex align-items-center gap-2 text-decoration-none link-dark"
+              title="View & Edit Profile"
+              style={{ cursor: 'pointer' }}
             >
-              {(user?.username || 'C')[0].toUpperCase()}
-            </div>
+              <div className="text-end d-none d-sm-block">
+                <div className="small fw-bold text-dark">{user?.username || 'Candidate'}</div>
+                <div className="text-muted" style={{ fontSize: '11px' }}>{user?.email}</div>
+              </div>
+              <div
+                className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold shadow-sm"
+                style={{
+                  width: '38px',
+                  height: '38px',
+                  fontSize: '14px',
+                  transition: 'transform 0.15s ease-in-out',
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+              >
+                {(user?.username || 'C')[0].toUpperCase()}
+              </div>
+            </Link>
+
+            {/* Logout Button */}
             <button className="btn btn-outline-danger btn-sm" onClick={logout} title="Sign Out">
               <i className="bi bi-box-arrow-right"></i>
             </button>
