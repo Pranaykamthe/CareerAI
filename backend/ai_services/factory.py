@@ -14,12 +14,14 @@ from .fallback_evaluator import DeterministicFallbackEvaluator
 
 
 class GroqLLMService(BaseLLMService):
-    """Adapter for Groq Cloud API targeting active models in account catalog."""
+    """Adapter for Groq Cloud API targeting active models in the account catalog."""
 
     CANDIDATE_MODELS = [
         "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
-        "qwen/qwen3.8-27b"
+        "qwen/qwen3.8-27b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant"
     ]
 
     def __init__(self, api_key: str):
@@ -28,30 +30,53 @@ class GroqLLMService(BaseLLMService):
 
     def evaluate_answer(
         self,
-        question_text,
-        category,
-        difficulty,
-        ideal_points,
-        sample_answer,
-        candidate_answer,
-        role_target="Software Engineer"
+        question_text: str,
+        category: str,
+        difficulty: str,
+        ideal_points: list,
+        sample_answer: str,
+        candidate_answer: str,
+        role_target: str = "Software Engineer"
     ):
         url = "https://api.groq.com/openai/v1/chat/completions"
-        prompt = f"""You are a senior technical interviewer evaluating a candidate for the role of {role_target}.
-Question ({category} - {difficulty}): {question_text}
-Ideal Talking Points: {json.dumps(ideal_points)}
-Sample Best Answer: {sample_answer}
-Candidate's Answer: {candidate_answer}
 
-Evaluate the candidate's answer strictly and objectively. Return ONLY a valid JSON object with these exact keys:
+        # Phase 13: Injected STAR evaluation rubric for HR and Behavioral categories
+        star_guideline = ""
+        if category in ["HR", "Behavioral"]:
+            star_guideline = """
+CRITICAL EVALUATION CRITERIA FOR BEHAVIORAL / HR QUESTIONS:
+1. STAR Framework Conformance: Did the candidate articulate the Situation, Task, Action, and Result?
+2. Communication Clarity & Professional Tone: Is the response concise, confident, and professional?
+3. Action & Impact: Did the candidate highlight their individual contribution ('I' vs 'we') and quantifiable outcomes?
+"""
+
+        points_str = json.dumps(ideal_points) if isinstance(ideal_points, list) else str(ideal_points)
+
+        prompt = f"""You are an expert executive technical recruiter and senior hiring manager conducting an interview evaluation.
+Role Target: {role_target}
+Question Category: {category}
+Difficulty Level: {difficulty}
+
+Interview Question:
+"{question_text}"
+
+Core Talking Points / Ideal Concepts:
+{points_str}
+
+Benchmark Sample Answer:
+"{sample_answer}"
+
+Candidate's Submitted Answer:
+"{candidate_answer}"
+{star_guideline}
+Evaluate the candidate's answer objectively. Return ONLY a valid JSON object matching this exact schema (no markdown, no code fences):
 {{
-  "score": <integer between 0 and 100>,
+  "score": <integer between 0 and 100 representing overall quality and depth>,
   "feedback": "<concise 2-3 sentence overall critique>",
   "strengths": ["<strength 1>", "<strength 2>"],
   "weaknesses": ["<weakness or missing point 1>", "<weakness 2>"],
-  "better_answer": "<polished 3-4 sentence model answer using the best industry practices>"
-}}
-Do NOT include markdown formatting or extra text outside the JSON object."""
+  "better_answer": "<an exemplary model response that adheres to best practices and the STAR framework>"
+}}"""
 
         last_error = ""
 
@@ -61,7 +86,7 @@ Do NOT include markdown formatting or extra text outside the JSON object."""
                 "messages": [
                     {
                         "role": "system",
-                        "content": "You are a strict, helpful technical interview evaluator. You only respond in JSON."
+                        "content": "You are a strict, helpful interview evaluator. You only respond with raw, valid JSON."
                     },
                     {"role": "user", "content": prompt}
                 ],
@@ -104,7 +129,7 @@ Do NOT include markdown formatting or extra text outside the JSON object."""
                 last_error = str(e)
                 continue
 
-        # Deterministic fallback if API calls fail
+        # Deterministic fallback if API calls fail or models are unreachable
         res = self.fallback.evaluate_answer(
             question_text, category, difficulty, ideal_points, sample_answer, candidate_answer, role_target
         )
