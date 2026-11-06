@@ -16,6 +16,7 @@ import ResumeManagement from './pages/candidate/ResumeManagement';
 import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
+import Applications from './pages/candidate/Applications';
 
 // Candidate Dashboard Overview
 const CandidateDashboard = () => {
@@ -158,6 +159,15 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+
+          <Route
+            path="/applications"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <Applications />
               </ProtectedRoute>
             }
           />

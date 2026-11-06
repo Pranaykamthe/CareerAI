@@ -54,6 +54,11 @@ export const Navbar = () => {
               </Link>
             </li>
             <li className="nav-item">
+              <Link className={`nav-link ${isActive('/applications')}`} to="/applications">
+                <i className="bi bi-kanban me-1"></i> Applications
+              </Link>
+            </li>
+            <li className="nav-item">
               <Link className={`nav-link ${isActive('/profile')}`} to="/profile">
                 <i className="bi bi-person-circle me-1"></i> Profile
               </Link>
