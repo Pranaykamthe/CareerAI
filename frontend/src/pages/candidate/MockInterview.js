@@ -1,19 +1,32 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Navbar } from '../../components/layout/Navbar';
 import { interviewService } from '../../services/interviewService';
 
 const MockInterview = () => {
+  const location = useLocation();
+
   // Session Configuration & History State
   const [recentSessions, setRecentSessions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState(null);
 
-  // Setup Form State
-  const [roleTarget, setRoleTarget] = useState('Junior Full Stack Engineer');
-  const [category, setCategory] = useState('Mixed');
+  // Setup Form State: initialized from incoming location.state if navigated from InterviewPrep
+  const [roleTarget, setRoleTarget] = useState(location.state?.role || 'Junior Full Stack Engineer');
+  const [category, setCategory] = useState(location.state?.category || 'Mixed');
   const [difficulty, setDifficulty] = useState('Medium');
   const [totalQuestions, setTotalQuestions] = useState(3);
   const [isStarting, setIsStarting] = useState(false);
+
+  // Update form values if location.state changes
+  useEffect(() => {
+    if (location.state?.category) {
+      setCategory(location.state.category);
+    }
+    if (location.state?.role) {
+      setRoleTarget(location.state.role);
+    }
+  }, [location.state]);
 
   // Active Session State
   const [activeSession, setActiveSession] = useState(null);
@@ -22,7 +35,7 @@ const MockInterview = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
-  // Phase 12 AI Evaluation Turn Result
+  // Turn Result
   const [latestFeedback, setLatestFeedback] = useState(null);
 
   // Review Modal State
@@ -85,7 +98,6 @@ const MockInterview = () => {
       const session = await interviewService.startSession(payload);
       setActiveSession(session);
 
-      // Locate first unanswered turn
       const firstTurn = session.turns?.find((t) => !t.is_answered) || session.turns?.[0];
       setCurrentTurn(firstTurn);
       setCandidateAnswer('');
@@ -98,7 +110,7 @@ const MockInterview = () => {
     }
   };
 
-  // 4. Submit Answer & Run Phase 12 Evaluation
+  // 4. Submit Answer & Run Evaluation
   const handleSubmitAnswer = async () => {
     if (!candidateAnswer.trim()) {
       alert('Please type your response before submitting.');
@@ -119,7 +131,6 @@ const MockInterview = () => {
 
       const res = await interviewService.submitAnswer(activeSession.id, payload);
 
-      // Extract feedback
       const feedbackObj = res.feedback || (res.turn?.ai_feedback ? JSON.parse(res.turn.ai_feedback) : null);
       setLatestFeedback({
         score: res.ai_score ?? res.turn?.ai_score ?? 75,
@@ -128,11 +139,9 @@ const MockInterview = () => {
         isCompleted: res.is_session_completed,
       });
 
-      // Update Session
       const updatedSession = res.session || (await interviewService.getSessionById(activeSession.id));
       setActiveSession(updatedSession);
 
-      // Refresh recent records in background
       loadPastSessions();
     } catch (err) {
       setSubmitError(err.response?.data?.detail || 'Failed to submit answer for evaluation.');
@@ -151,7 +160,6 @@ const MockInterview = () => {
     if (nextTurn) {
       setCurrentTurn(nextTurn);
     } else {
-      // Mark session as completed and show summary
       setCurrentTurn(null);
       setActiveSession((prev) => ({ ...prev, status: 'completed' }));
       loadPastSessions();
@@ -231,7 +239,6 @@ const MockInterview = () => {
         {activeSession && activeSession.status === 'in_progress' ? (
           <div className="row g-4">
             <div className="col-lg-8">
-              {/* Question Turn Card */}
               {currentTurn && !latestFeedback && (
                 <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
                   <div className="d-flex justify-content-between align-items-center mb-3">
@@ -297,7 +304,6 @@ const MockInterview = () => {
                 </div>
               )}
 
-              {/* Phase 12 AI Evaluation Feedback Display */}
               {latestFeedback && (
                 <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4 border-top border-4 border-success">
                   <div className="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
@@ -325,15 +331,13 @@ const MockInterview = () => {
                     </div>
                   </div>
 
-                  {/* Feedback Summary */}
                   <div className="p-3 bg-light rounded-3 mb-3">
                     <div className="small fw-bold text-dark mb-1">Evaluator Feedback:</div>
                     <p className="small text-dark mb-0">
-                      {latestFeedback.feedback?.summary || 'Good attempt providing structured context.'}
+                      {latestFeedback.feedback?.feedback || latestFeedback.feedback?.summary || 'Good attempt providing structured context.'}
                     </p>
                   </div>
 
-                  {/* Strengths & Weaknesses */}
                   <div className="row g-3 mb-3">
                     <div className="col-md-6">
                       <div className="card h-100 border-success border-opacity-25 bg-success bg-opacity-10 p-3 rounded-3">
@@ -365,7 +369,6 @@ const MockInterview = () => {
                     </div>
                   </div>
 
-                  {/* Model Answer */}
                   {latestFeedback.better_answer && (
                     <div className="border rounded-3 p-3 bg-white mb-4">
                       <div className="small fw-bold text-primary mb-1">
@@ -384,7 +387,6 @@ const MockInterview = () => {
               )}
             </div>
 
-            {/* In-Session Sidebar: Progress & Transcript */}
             <div className="col-lg-4">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4 sticky-top" style={{ top: '80px' }}>
                 <h6 className="fw-bold text-dark mb-3">Session Progress</h6>
@@ -436,10 +438,9 @@ const MockInterview = () => {
           </div>
         ) : (
           /* ========================================================================= */
-          /* VIEW B: SETUP LAUNCHER & PAST RECORDS (Default View)                     */
+          /* VIEW B: SETUP LAUNCHER & PAST RECORDS                                     */
           /* ========================================================================= */
           <div className="row g-4">
-            {/* Left: Configure Session Form */}
             <div className="col-lg-7">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4">
                 <h4 className="fw-bold text-dark mb-4">Configure Your Interview Session</h4>
@@ -467,8 +468,8 @@ const MockInterview = () => {
                       >
                         <option value="Mixed">Mixed (Technical + HR + STAR)</option>
                         <option value="Technical">Technical</option>
-                        <option value="HR">HR / Behavioral</option>
-                        <option value="System Design">System Design</option>
+                        <option value="HR">HR / Culture Fit</option>
+                        <option value="Behavioral">Behavioral (STAR)</option>
                       </select>
                     </div>
 
@@ -530,7 +531,6 @@ const MockInterview = () => {
               </div>
             </div>
 
-            {/* Right: Recent Interview Records */}
             <div className="col-lg-5">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4 h-100">
                 <div className="d-flex justify-content-between align-items-center mb-3">
@@ -566,7 +566,7 @@ const MockInterview = () => {
                         <div>
                           <div className="fw-bold text-dark small">{s.role_target}</div>
                           <div className="text-muted" style={{ fontSize: '11px' }}>
-                            • {s.difficulty} • {new Date(s.created_at).toLocaleDateString()}
+                            • {s.category || 'Mixed'} • {s.difficulty} • {new Date(s.created_at).toLocaleDateString()}
                           </div>
                         </div>
 
@@ -600,9 +600,7 @@ const MockInterview = () => {
         )}
       </div>
 
-      {/* ========================================================================= */}
-      {/* 4. MODAL: Past Interview Session Review & Transcript                     */}
-      {/* ========================================================================= */}
+      {/* Review Modal */}
       {selectedReviewSession && (
         <div className="modal show fade d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
           <div className="modal-dialog modal-dialog-centered modal-lg">
@@ -669,9 +667,9 @@ const MockInterview = () => {
                           {turn.candidate_answer || <span className="text-muted fst-italic">Unanswered</span>}
                         </div>
 
-                        {feedbackParsed?.summary && (
+                        {feedbackParsed?.feedback && (
                           <div className="small text-muted mb-2">
-                            <strong className="text-secondary">AI Critique:</strong> {feedbackParsed.summary}
+                            <strong className="text-secondary">AI Critique:</strong> {feedbackParsed.feedback}
                           </div>
                         )}
 

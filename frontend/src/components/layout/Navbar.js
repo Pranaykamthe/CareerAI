@@ -7,7 +7,9 @@ export const Navbar = () => {
   const location = useLocation();
 
   const isActive = (path) =>
-    location.pathname === path ? 'active fw-bold text-primary border-bottom border-2 border-primary' : 'text-dark';
+    location.pathname === path
+      ? 'active fw-bold text-primary border-bottom border-2 border-primary'
+      : 'text-dark';
 
   return (
     <nav className="navbar navbar-expand-xl bg-white border-bottom sticky-top py-2 px-3 px-lg-4 shadow-sm">
@@ -17,7 +19,7 @@ export const Navbar = () => {
           <i className="bi bi-layers-fill me-2"></i>CareerAI
         </Link>
 
-        {/* Mobile / Narrow Screen Hamburger */}
+        {/* Mobile / Responsive Toggler */}
         <button
           className="navbar-toggler"
           type="button"
@@ -69,13 +71,18 @@ export const Navbar = () => {
               </Link>
             </li>
             <li className="nav-item">
+              <Link className={`nav-link px-2 text-nowrap ${isActive('/interview-prep')}`} to="/interview-prep">
+                <i className="bi bi-stars me-1"></i> Interview Prep
+              </Link>
+            </li>
+            <li className="nav-item">
               <Link className={`nav-link px-2 text-nowrap ${isActive('/mock-interview')}`} to="/mock-interview">
                 <i className="bi bi-mic-fill me-1"></i> Mock Interview
               </Link>
             </li>
           </ul>
 
-          {/* User Profile & Logout */}
+          {/* User Profile Navigation & Logout */}
           <div className="d-flex align-items-center gap-3 ms-xl-2 text-nowrap">
             <Link
               to="/profile"

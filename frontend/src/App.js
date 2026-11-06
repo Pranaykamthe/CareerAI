@@ -18,6 +18,7 @@ import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
 import Applications from './pages/candidate/Applications';
 import QuestionBank from './pages/candidate/QuestionBank';
+import InterviewPrep from './pages/candidate/InterviewPrep';
 import MockInterview from './pages/candidate/MockInterview';
 
 // Candidate Dashboard Overview
@@ -56,6 +57,9 @@ const CandidateDashboard = () => {
             </Link>
             <Link to="/question-bank" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
               <i className="bi bi-collection-play-fill"></i> Question Bank
+            </Link>
+            <Link to="/interview-prep" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-stars"></i> Interview Prep
             </Link>
             <Link to="/mock-interview" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
               <i className="bi bi-mic-fill"></i> Mock Interview
@@ -179,6 +183,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
                 <QuestionBank />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/interview-prep"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <InterviewPrep />
               </ProtectedRoute>
             }
           />
