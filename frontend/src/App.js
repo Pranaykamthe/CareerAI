@@ -18,6 +18,7 @@ import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
 import Applications from './pages/candidate/Applications';
 import QuestionBank from './pages/candidate/QuestionBank';
+import MockInterview from './pages/candidate/MockInterview';
 
 // Candidate Dashboard Overview
 const CandidateDashboard = () => {
@@ -34,8 +35,8 @@ const CandidateDashboard = () => {
             <i className="bi bi-speedometer2 fs-2"></i>
           </div>
           <h2 className="fw-bold text-dark mb-2">Welcome back, {user?.username || 'Candidate'}!</h2>
-          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '600px' }}>
-            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities, and practice interview questions.
+          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '650px' }}>
+            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities, practice questions, and run AI mock interview simulations.
           </p>
           <div className="d-flex flex-wrap justify-content-center gap-2">
             <Link to="/resumes" className="btn btn-primary d-inline-flex align-items-center gap-2">
@@ -55,6 +56,9 @@ const CandidateDashboard = () => {
             </Link>
             <Link to="/question-bank" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
               <i className="bi bi-collection-play-fill"></i> Question Bank
+            </Link>
+            <Link to="/mock-interview" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+              <i className="bi bi-mic-fill"></i> Mock Interview
             </Link>
             <Link to="/profile" className="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
               <i className="bi bi-person-circle"></i> Edit Profile
@@ -175,6 +179,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
                 <QuestionBank />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/mock-interview"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <MockInterview />
               </ProtectedRoute>
             }
           />

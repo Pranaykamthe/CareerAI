@@ -27,7 +27,7 @@ export const Navbar = () => {
         </button>
 
         <div className="collapse navbar-collapse" id="careeraiNav">
-          <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-4 gap-lg-2">
+          <ul className="navbar-nav me-auto mb-2 mb-lg-0 ms-lg-3 gap-lg-1">
             <li className="nav-item">
               <Link className={`nav-link ${isActive('/dashboard')}`} to="/dashboard">
                 <i className="bi bi-grid-1x2-fill me-1"></i> Dashboard
@@ -61,6 +61,11 @@ export const Navbar = () => {
             <li className="nav-item">
               <Link className={`nav-link ${isActive('/question-bank')}`} to="/question-bank">
                 <i className="bi bi-collection-play-fill me-1"></i> Question Bank
+              </Link>
+            </li>
+            <li className="nav-item">
+              <Link className={`nav-link ${isActive('/mock-interview')}`} to="/mock-interview">
+                <i className="bi bi-mic-fill me-1"></i> Mock Interview
               </Link>
             </li>
             <li className="nav-item">
