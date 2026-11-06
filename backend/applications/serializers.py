@@ -2,7 +2,6 @@ from rest_framework import serializers
 from .models import JobApplication
 from jobs.models import Job
 from jobs.serializers import JobSerializer
-from resumes.models import Resume
 
 class JobApplicationSerializer(serializers.ModelSerializer):
     job_details = JobSerializer(source='job', read_only=True)
@@ -25,7 +24,7 @@ class JobApplicationSerializer(serializers.ModelSerializer):
             'applied_date',
             'updated_at',
         )
-        read_only_fields = ('id', 'user', 'applied_date', 'updated_at')
+        read_only_fields = ('id', 'user', 'job', 'applied_date', 'updated_at')
 
     def create(self, validated_data):
         user = self.context['request'].user
@@ -33,7 +32,7 @@ class JobApplicationSerializer(serializers.ModelSerializer):
         status = validated_data.get('status', 'Saved')
         notes = validated_data.get('notes', '')
 
-        application, created = JobApplication.objects.update_or_create(
+        application, _ = JobApplication.objects.update_or_create(
             user=user,
             job=job,
             defaults={'status': status, 'notes': notes}

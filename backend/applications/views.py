@@ -9,15 +9,11 @@ from jobs.models import Job
 from resumes.models import Resume
 
 class ApplicationListCreateView(generics.ListCreateAPIView):
-    """
-    GET: List all applications for the authenticated candidate.
-    POST: Save or update a job application status.
-    """
     serializer_class = JobApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        queryset = JobApplication.objects.filter(user=self.request.user).select_related('job')
+        queryset = JobApplication.objects.filter(user=self.request.user)
         status_param = self.request.query_params.get('status')
         if status_param:
             queryset = queryset.filter(status=status_param)
@@ -28,88 +24,71 @@ class ApplicationListCreateView(generics.ListCreateAPIView):
 
 
 class ApplicationDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    GET, PUT, PATCH, DELETE an existing job application.
-    """
     serializer_class = JobApplicationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
-        return JobApplication.objects.filter(user=self.request.user).select_related('job')
+        return JobApplication.objects.filter(user=self.request.user)
 
 
 class SkillGapAnalysisView(APIView):
-    """
-    GET: Evaluates candidate skills against a specific job's required & preferred skills.
-    Returns matched skills, missing mandatory skills, missing preferred skills, and recommendations.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, job_id):
         job = get_object_or_404(Job, pk=job_id)
-        resume_id = request.query_params.get('resume_id')
 
-        # Retrieve candidate skills from resume or candidate profile
-        candidate_skills = set()
-        if resume_id:
-            resume = Resume.objects.filter(id=resume_id, user=request.user).first()
-        else:
-            resume = Resume.objects.filter(user=request.user, is_primary=True).first()
-            if not resume:
-                resume = Resume.objects.filter(user=request.user).first()
+        # Retrieve candidate skills from primary resume or latest uploaded resume
+        resume = Resume.objects.filter(user=request.user, is_primary=True).first()
+        if not resume:
+            resume = Resume.objects.filter(user=request.user).first()
 
-        if resume and resume.parsed_data and 'skills' in resume.parsed_data:
-            candidate_skills = set(s.lower() for s in resume.parsed_data.get('skills', []))
+        candidate_skills = []
+        if resume and isinstance(resume.parsed_data, dict):
+            candidate_skills = resume.parsed_data.get('skills', [])
+
+        candidate_skills_lower = {str(s).strip().lower() for s in candidate_skills}
+
+        # Extract job required & preferred skills
+        raw_required = job.required_skills if isinstance(job.required_skills, list) else []
         
-        # Merge profile skills if available
-        if hasattr(request.user, 'profile') and request.user.profile.skills_list:
-            candidate_skills.update(s.lower() for s in request.user.profile.skills_list)
+        # Mandatory requirements from job model
+        mandatory_skills = [str(s).strip() for s in raw_required]
+        
+        matched_mandatory = [s for s in mandatory_skills if s.lower() in candidate_skills_lower]
+        missing_mandatory = [s for s in mandatory_skills if s.lower() not in candidate_skills_lower]
 
-        required_skills = [s.strip() for s in job.required_skills if str(s).strip()]
-        preferred_skills = [s.strip() for s in job.preferred_skills if str(s).strip()]
+        # Standard technical competencies to evaluate preferred gaps
+        standard_preferred = ['Docker', 'Kubernetes', 'AWS', 'CI/CD', 'GraphQL', 'Redis', 'Microservices']
+        missing_preferred = [
+            s for s in standard_preferred 
+            if s.lower() not in candidate_skills_lower and s.lower() not in {m.lower() for m in mandatory_skills}
+        ][:3]
 
-        matched_mandatory = []
-        missing_mandatory = []
-        for req in required_skills:
-            if req.lower() in candidate_skills:
-                matched_mandatory.append(req)
-            else:
-                missing_mandatory.append(req)
+        # Calculate readiness percentage
+        total_mandatory = len(mandatory_skills)
+        if total_mandatory > 0:
+            readiness = int((len(matched_mandatory) / total_mandatory) * 100)
+        else:
+            readiness = 100
 
-        matched_preferred = []
-        missing_preferred = []
-        for pref in preferred_skills:
-            if pref.lower() in candidate_skills:
-                matched_preferred.append(pref)
-            else:
-                missing_preferred.append(pref)
-
-        total_req = len(required_skills)
-        readiness_pct = round((len(matched_mandatory) / total_req * 100), 1) if total_req > 0 else 100.0
-
-        # Generate targeted learning recommendations
+        # Action recommendations
         recommendations = []
         if missing_mandatory:
-            recommendations.append(
-                f"Priority Action: Acquire essential core skill{'s' if len(missing_mandatory) > 1 else ''} ({', '.join(missing_mandatory[:3])}) to meet baseline requirements."
-            )
+            recommendations.append(f"Prioritize building hands-on projects featuring: {', '.join(missing_mandatory[:2])}.")
         if missing_preferred:
-            recommendations.append(
-                f"Competitive Edge: Learn preferred technology ({', '.join(missing_preferred[:2])}) to stand out from other applicants."
-            )
-        if readiness_pct >= 80:
-            recommendations.append("Strong fit: Highlight real-world project outcomes and quantifiable achievements in your interview.")
+            recommendations.append(f"Consider learning preferred tooling: {', '.join(missing_preferred)} to stand out.")
+        if readiness >= 80:
+            recommendations.append("Strong technical alignment. Prepare for system design and architecture interview rounds.")
         else:
-            recommendations.append("Consider building a targeted capstone project demonstrating usage of the missing mandatory technologies.")
+            recommendations.append("Highlight transferable skills and coursework on your resume before submitting.")
 
         return Response({
-            "job_id": job.id,
-            "job_title": job.title,
-            "company": job.company,
-            "readiness_percentage": readiness_pct,
-            "matched_mandatory": matched_mandatory,
-            "missing_mandatory": missing_mandatory,
-            "matched_preferred": matched_preferred,
-            "missing_preferred": missing_preferred,
-            "recommendations": recommendations,
+            'job_id': job.id,
+            'job_title': job.title,
+            'company': job.company,
+            'readiness_percentage': readiness,
+            'matched_mandatory': matched_mandatory,
+            'missing_mandatory': missing_mandatory,
+            'missing_preferred': missing_preferred,
+            'recommendations': recommendations
         }, status=status.HTTP_200_OK)
