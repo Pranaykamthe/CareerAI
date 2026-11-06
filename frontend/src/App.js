@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
+import { Footer } from './components/layout/Footer';
 
 // Auth Pages
 import Login from './pages/auth/Login';
@@ -21,12 +22,27 @@ import QuestionBank from './pages/candidate/QuestionBank';
 import InterviewPrep from './pages/candidate/InterviewPrep';
 import MockInterview from './pages/candidate/MockInterview';
 
-// Candidate Dashboard Overview
+// Global Layout: Ensures all candidate pages get the sticky footer
+const CandidateLayout = () => {
+  return (
+    <div className="d-flex flex-column min-vh-100 bg-light">
+      <main className="flex-grow-1">
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+};
+
+// Candidate Dashboard Hub View
 const CandidateDashboard = () => {
   const { user } = useAuth();
+
   return (
     <div className="min-vh-100 bg-light">
+      {/* Dashboard's own single Navbar */}
       <Navbar />
+
       <div className="container py-5">
         <div className="card shadow-sm border-0 p-4 p-md-5 rounded-4 text-center bg-white mb-4">
           <div
@@ -35,10 +51,16 @@ const CandidateDashboard = () => {
           >
             <i className="bi bi-speedometer2 fs-2"></i>
           </div>
-          <h2 className="fw-bold text-dark mb-2">Welcome back, {user?.username || 'Candidate'}!</h2>
+
+          <h2 className="fw-bold text-dark mb-2">
+            Welcome back, {user?.username || 'Candidate'}!
+          </h2>
+
           <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '650px' }}>
-            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities, practice questions, and run AI mock interview simulations.
+            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities,
+            practice questions, and run AI mock interview simulations[cite: 3].
           </p>
+
           <div className="d-flex flex-wrap justify-content-center gap-2">
             <Link to="/resumes" className="btn btn-primary d-inline-flex align-items-center gap-2">
               <i className="bi bi-cloud-arrow-up"></i> Upload & Manage Resumes
@@ -74,9 +96,10 @@ const CandidateDashboard = () => {
   );
 };
 
-// Admin Dashboard Overview
+// Admin Dashboard Hub
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
+
   return (
     <div className="min-vh-100 bg-dark text-white py-5">
       <div className="container">
@@ -107,101 +130,25 @@ function App() {
 
           {/* Protected Candidate Routes */}
           <Route
-            path="/dashboard"
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <CandidateDashboard />
+                <CandidateLayout />
               </ProtectedRoute>
             }
-          />
-          <Route
-            path="/profile"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <Profile />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/resumes"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <ResumeManagement />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/resume-analyzer"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <ResumeAnalyzer />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/jobs"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <JobDescriptions />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/job-descriptions"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <JobDescriptions />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/job-matching"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <JobMatching />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/matches"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <JobMatching />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/applications"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <Applications />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/question-bank"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <QuestionBank />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/interview-prep"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <InterviewPrep />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/mock-interview"
-            element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
-                <MockInterview />
-              </ProtectedRoute>
-            }
-          />
+          >
+            <Route path="/dashboard" element={<CandidateDashboard />} />
+            <Route path="/profile" element={<Profile />} />
+            <Route path="/resumes" element={<ResumeManagement />} />
+            <Route path="/resume-analyzer" element={<ResumeAnalyzer />} />
+            <Route path="/jobs" element={<JobDescriptions />} />
+            <Route path="/job-descriptions" element={<JobDescriptions />} />
+            <Route path="/job-matching" element={<JobMatching />} />
+            <Route path="/matches" element={<JobMatching />} />
+            <Route path="/applications" element={<Applications />} />
+            <Route path="/question-bank" element={<QuestionBank />} />
+            <Route path="/interview-prep" element={<InterviewPrep />} />
+            <Route path="/mock-interview" element={<MockInterview />} />
+          </Route>
 
           {/* Protected Admin Routes */}
           <Route
