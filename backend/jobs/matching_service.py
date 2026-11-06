@@ -1,7 +1,7 @@
 import re
 
 def normalize_skill(skill):
-    return skill.strip().lower()
+    return str(skill).strip().lower()
 
 def compute_job_match(resume, job, candidate_profile=None):
     """
@@ -11,22 +11,28 @@ def compute_job_match(resume, job, candidate_profile=None):
       - Experience Alignment: 30%
       - Keyword Overlap: 20%
     """
-    # 1. Candidate Skills Collection
     candidate_skills = set()
     
-    # Extract from parsed resume data
+    # 1. Extract from parsed resume data
     if hasattr(resume, 'parsed_data') and isinstance(resume.parsed_data, dict):
         skills_from_resume = resume.parsed_data.get('skills', [])
         for s in skills_from_resume:
             candidate_skills.add(normalize_skill(s))
             
-    # Extract from resume analysis if present
-    if hasattr(resume, 'analysis') and resume.analysis and resume.analysis.extracted_skills:
-        for s in resume.analysis.extracted_skills:
+    # Also extract directly from raw text if parsed_data is empty
+    raw_text = (getattr(resume, 'raw_text', '') or '').lower()
+    common_skills_pool = [
+        'python', 'java', 'core java', 'c++', 'javascript', 'react', 'react.js',
+        'django', 'django rest framework', 'flask', 'sql', 'mysql', 'postgresql',
+        'aws', 'git', 'github', 'docker', 'rest api', 'rest apis', 'html5', 'css3',
+        'bootstrap', 'pandas', 'numpy', 'scikit-learn', 'pytest', 'spring', 'hibernate'
+    ]
+    for s in common_skills_pool:
+        if re.search(rf'\b{re.escape(s)}\b', raw_text):
             candidate_skills.add(normalize_skill(s))
-            
-    # Fallback/augmentation from candidate profile
-    if candidate_profile and candidate_profile.skills_list:
+
+    # Fallback/augmentation from candidate profile if present
+    if candidate_profile and hasattr(candidate_profile, 'skills_list') and candidate_profile.skills_list:
         for s in candidate_profile.skills_list:
             candidate_skills.add(normalize_skill(s))
 
@@ -34,52 +40,49 @@ def compute_job_match(resume, job, candidate_profile=None):
     req_skills = [normalize_skill(s) for s in (job.required_skills or [])]
     pref_skills = [normalize_skill(s) for s in (job.preferred_skills or [])]
 
-    matched_req = [s for s in req_skills if s in candidate_skills]
-    missing_req = [s for s in req_skills if s not in candidate_skills]
-    matched_pref = [s for s in pref_skills if s in candidate_skills]
+    matched_req = [s for s in req_skills if any(s == cs or s in cs or cs in s for cs in candidate_skills)]
+    missing_req = [s for s in req_skills if not any(s == cs or s in cs or cs in s for cs in candidate_skills)]
+    matched_pref = [s for s in pref_skills if any(s == cs or s in cs or cs in s for cs in candidate_skills)]
 
     if req_skills:
         base_skill_pct = (len(matched_req) / len(req_skills)) * 100
-        # Bonus for preferred skills (up to 15% extra bonus capped at 100)
         pref_bonus = (len(matched_pref) / len(pref_skills) * 15) if pref_skills else 0
         skill_score = min(int(base_skill_pct + pref_bonus), 100)
     else:
-        skill_score = 75  # Default baseline if job has no explicit required skills tag
+        skill_score = 75
 
     # 3. Experience Alignment Calculation (30% Weight)
     cand_exp_years = 0.0
-    if candidate_profile and candidate_profile.experience_years:
+    if candidate_profile and hasattr(candidate_profile, 'experience_years') and candidate_profile.experience_years:
         try:
             cand_exp_years = float(candidate_profile.experience_years)
         except (ValueError, TypeError):
             cand_exp_years = 0.0
     elif hasattr(resume, 'parsed_data') and isinstance(resume.parsed_data, dict):
         exp_entries = resume.parsed_data.get('sections', {}).get('experience', [])
-        cand_exp_years = max(len(exp_entries) * 1.5, 1.0) if exp_entries else 1.0
+        cand_exp_years = max(len(exp_entries) * 1.0, 1.0) if exp_entries else 1.0
+    else:
+        cand_exp_years = 1.0
 
-    min_req_years = float(job.min_experience_years or 1)
+    min_req_years = float(getattr(job, 'min_experience_years', 1) or 1)
     if cand_exp_years >= min_req_years:
         experience_score = 100
     elif cand_exp_years == 0:
-        experience_score = 40
+        experience_score = 50
     else:
-        experience_score = max(int((cand_exp_years / min_req_years) * 100), 40)
+        experience_score = max(int((cand_exp_years / min_req_years) * 100), 50)
 
     # 4. Keyword Overlap Calculation (20% Weight)
-    resume_text = (getattr(resume, 'raw_text', '') or '').lower()
     job_text = (job.description or '').lower()
-
-    # Extract distinct alphanumeric tokens (length >= 4)
     job_words = set(re.findall(r'\b[a-z]{4,}\b', job_text))
-    # Remove common filler words
     stopwords = {'with', 'this', 'that', 'from', 'have', 'will', 'your', 'about', 'team', 'work', 'years', 'role'}
     meaningful_job_words = job_words - stopwords
 
-    if meaningful_job_words and resume_text:
-        overlapping_words = [w for w in meaningful_job_words if w in resume_text]
+    if meaningful_job_words and raw_text:
+        overlapping_words = [w for w in meaningful_job_words if w in raw_text]
         keyword_score = min(int((len(overlapping_words) / len(meaningful_job_words)) * 100), 100)
     else:
-        keyword_score = 50
+        keyword_score = 60
 
     # 5. Composite Weighted Score
     final_score = int(
@@ -87,9 +90,8 @@ def compute_job_match(resume, job, candidate_profile=None):
         (experience_score * 0.30) +
         (keyword_score * 0.20)
     )
-    final_score = max(10, min(final_score, 99))  # Bound between 10% and 99%
+    final_score = max(20, min(final_score, 98))
 
-    # Match Level classification
     if final_score >= 80:
         match_level = 'High Match'
     elif final_score >= 60:
@@ -97,10 +99,9 @@ def compute_job_match(resume, job, candidate_profile=None):
     else:
         match_level = 'Low Match'
 
-    # Human-readable summary
     summary = (
-        f"Matches {len(matched_req)} of {len(req_skills)} mandatory skills. "
-        f"Candidate experience ({cand_exp_years:.1f} yrs) evaluated against {min_req_years:.0f} yrs target requirement."
+        f"Matched {len(matched_req)} of {len(req_skills)} required technical skills. "
+        f"Candidate experience (~{cand_exp_years:.1f} yrs) compared against {min_req_years:.0f} yrs requirement."
     )
 
     return {
