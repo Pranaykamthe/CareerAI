@@ -13,6 +13,7 @@ import AdminLogin from './pages/auth/AdminLogin';
 // Candidate Pages
 import Profile from './pages/candidate/Profile';
 import ResumeManagement from './pages/candidate/ResumeManagement';
+import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 
 // Candidate Dashboard Hub
 const CandidateDashboard = () => {
@@ -27,13 +28,16 @@ const CandidateDashboard = () => {
           </div>
           <h3 className="fw-bold text-dark mb-1">Welcome back, {user?.username}!</h3>
           <p className="text-muted small mb-4">
-            Upload and manage your resumes, maintain your candidate profile, and explore career matches.
+            Manage your profile, upload resumes, evaluate your deterministic ATS score, and explore job matches[cite: 1, 9].
           </p>
-          <div className="d-flex justify-content-center gap-3">
+          <div className="d-flex flex-wrap justify-content-center gap-3">
             <Link to="/resumes" className="btn btn-primary-custom">
               <i className="bi bi-cloud-arrow-up me-1"></i> Upload & Manage Resumes
             </Link>
-            <Link to="/profile" className="btn btn-outline-primary">
+            <Link to="/resume-analyzer" className="btn btn-outline-primary">
+              <i className="bi bi-bar-chart-line me-1"></i> ATS Resume Analyzer
+            </Link>
+            <Link to="/profile" className="btn btn-outline-secondary">
               <i className="bi bi-person-circle me-1"></i> Edit Profile
             </Link>
           </div>
@@ -94,6 +98,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
                 <ResumeManagement />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/resume-analyzer"
+            element={
+              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+                <ResumeAnalyzer />
               </ProtectedRoute>
             }
           />

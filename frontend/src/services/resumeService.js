@@ -29,6 +29,16 @@ export const resumeService = {
     return response.data;
   },
 
+  getAnalysis: async (id) => {
+    const response = await api.get(`/resumes/${id}/analyze/`);
+    return response.data;
+  },
+
+  triggerAnalysis: async (id) => {
+    const response = await api.post(`/resumes/${id}/analyze/`);
+    return response.data;
+  },
+
   deleteResume: async (id) => {
     const response = await api.delete(`/resumes/${id}/`);
     return response.data;
