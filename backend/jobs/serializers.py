@@ -1,42 +1,33 @@
 from rest_framework import serializers
-from .models import Job
+from .models import Job, JobMatch
 
 class JobSerializer(serializers.ModelSerializer):
-    created_by_email = serializers.ReadOnlyField(source='created_by.email')
-
     class Meta:
         model = Job
-        fields = [
+        fields = '__all__'
+        read_only_fields = ('id', 'created_at', 'updated_at')
+
+class JobMatchSerializer(serializers.ModelSerializer):
+    job = JobSerializer(read_only=True)
+    resume_file_name = serializers.CharField(source='resume.file_name', read_only=True)
+
+    class Meta:
+        model = JobMatch
+        fields = (
             'id',
-            'title',
-            'company',
-            'location',
-            'job_type',
-            'experience_level',
-            'min_experience_years',
-            'salary_range',
-            'description',
-            'required_skills',
-            'preferred_skills',
-            'responsibilities',
-            'is_active',
-            'created_by_email',
+            'job',
+            'resume',
+            'resume_file_name',
+            'match_score',
+            'skill_score',
+            'experience_score',
+            'keyword_score',
+            'matched_skills',
+            'missing_skills',
+            'preferred_matched_skills',
+            'match_level',
+            'summary',
             'created_at',
             'updated_at',
-        ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by_email']
-
-    def validate_title(self, value):
-        if not value.strip():
-            raise serializers.ValidationError("Job title cannot be blank.")
-        return value
-
-    def validate_company(self, value):
-        if not value.strip():
-            raise serializers.ValidationError("Company name cannot be blank.")
-        return value
-
-    def validate_required_skills(self, value):
-        if not isinstance(value, list) or len(value) == 0:
-            raise serializers.ValidationError("Provide at least one required skill.")
-        return [str(s).strip() for s in value if str(s).strip()]
+        )
+        read_only_fields = ('id', 'created_at', 'updated_at')
