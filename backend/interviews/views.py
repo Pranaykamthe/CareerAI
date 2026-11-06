@@ -14,6 +14,7 @@ from .serializers import (
     InterviewSessionSerializer,
     StartSessionRequestSerializer,
     SubmitAnswerRequestSerializer,
+    InterviewReportSerializer,
 )
 from .seed_questions import seed_default_questions
 from ai_services.factory import get_ai_service
@@ -296,7 +297,7 @@ class SubmitAnswerView(APIView):
 
         if all_completed:
             session.completed_at = timezone.now()
-            # Retain in_progress so frontend can render the evaluation result card for the final turn
+            # Retain in_progress so the frontend can display the evaluation result card for the final turn
             session.status = 'in_progress'
             session.save(update_fields=['current_question_index', 'status', 'overall_score', 'completed_at'])
         else:
@@ -344,3 +345,45 @@ class CancelInterviewSessionView(APIView):
         session.status = 'cancelled'
         session.save(update_fields=['status'])
         return Response({'status': 'cancelled', 'message': 'Interview session ended.'})
+
+
+class InterviewSessionReportView(APIView):
+    """
+    GET /api/interviews/sessions/<pk>/report/
+    Retrieves the complete post-interview performance diagnostics report.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, pk=None, session_id=None):
+        target_id = pk or session_id or self.kwargs.get('pk')
+        
+        # 1. Allow owner access or staff/admin access
+        queryset = InterviewSession.objects.prefetch_related('turns')
+        if not (request.user.is_staff or getattr(request.user, 'role', '') == 'admin'):
+            queryset = queryset.filter(user=request.user)
+
+        session = get_object_or_404(queryset, pk=target_id)
+
+        # 2. Recalculate average score and finalize session status safely
+        try:
+            evaluated_turns = session.turns.filter(ai_score__isnull=False)
+            if evaluated_turns.exists():
+                avg_score = round(sum(t.ai_score for t in evaluated_turns) / evaluated_turns.count())
+                session.overall_score = avg_score
+                update_fields = ['overall_score', 'status']
+
+                if session.status != 'completed':
+                    session.status = 'completed'
+
+                if hasattr(session, 'completed_at'):
+                    session.completed_at = session.completed_at or timezone.now()
+                    update_fields.append('completed_at')
+
+                session.save(update_fields=update_fields)
+        except Exception as e:
+            # Fallback if specific update fields do not exist in schema
+            session.save()
+
+        # 3. Serialize and return report
+        serializer = InterviewReportSerializer(session, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)

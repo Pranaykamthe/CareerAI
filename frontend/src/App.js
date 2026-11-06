@@ -21,8 +21,9 @@ import Applications from './pages/candidate/Applications';
 import QuestionBank from './pages/candidate/QuestionBank';
 import InterviewPrep from './pages/candidate/InterviewPrep';
 import MockInterview from './pages/candidate/MockInterview';
+import InterviewReport from './pages/candidate/InterviewReport';
 
-// Global Layout: Ensures all candidate pages get the sticky footer
+// Global Layout: Keeps each page content inside flex-grow and renders the sticky Footer at the bottom
 const CandidateLayout = () => {
   return (
     <div className="d-flex flex-column min-vh-100 bg-light">
@@ -40,9 +41,7 @@ const CandidateDashboard = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      {/* Dashboard's own single Navbar */}
       <Navbar />
-
       <div className="container py-5">
         <div className="card shadow-sm border-0 p-4 p-md-5 rounded-4 text-center bg-white mb-4">
           <div
@@ -58,7 +57,7 @@ const CandidateDashboard = () => {
 
           <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '650px' }}>
             Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities,
-            practice questions, and run AI mock interview simulations[cite: 3].
+            practice curated questions, and run AI mock interview simulations with detailed diagnostic reports.
           </p>
 
           <div className="d-flex flex-wrap justify-content-center gap-2">
@@ -128,7 +127,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/admin-login" element={<AdminLogin />} />
 
-          {/* Protected Candidate Routes */}
+          {/* Protected Candidate Routes (Wrapped in CandidateLayout for persistent Footer) */}
           <Route
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
@@ -148,6 +147,7 @@ function App() {
             <Route path="/question-bank" element={<QuestionBank />} />
             <Route path="/interview-prep" element={<InterviewPrep />} />
             <Route path="/mock-interview" element={<MockInterview />} />
+            <Route path="/interview-report/:sessionId" element={<InterviewReport />} />
           </Route>
 
           {/* Protected Admin Routes */}
@@ -160,7 +160,7 @@ function App() {
             }
           />
 
-          {/* Default & Fallback Redirects */}
+          {/* Fallback Redirects */}
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>

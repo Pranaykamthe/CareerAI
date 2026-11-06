@@ -1,24 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { Navbar } from '../../components/layout/Navbar';
 import { interviewService } from '../../services/interviewService';
 
 const MockInterview = () => {
   const location = useLocation();
+  const navigate = useNavigate();
 
   // Session Configuration & History State
   const [recentSessions, setRecentSessions] = useState([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [historyError, setHistoryError] = useState(null);
 
-  // Setup Form State: initialized from incoming location.state if navigated from InterviewPrep
+  // Setup Form State: initialized from incoming location.state if forwarded from InterviewPrep
   const [roleTarget, setRoleTarget] = useState(location.state?.role || 'Junior Full Stack Engineer');
   const [category, setCategory] = useState(location.state?.category || 'Mixed');
   const [difficulty, setDifficulty] = useState('Medium');
   const [totalQuestions, setTotalQuestions] = useState(3);
   const [isStarting, setIsStarting] = useState(false);
 
-  // Update form values if location.state changes
+  // Update setup parameters if location.state changes
   useEffect(() => {
     if (location.state?.category) {
       setCategory(location.state.category);
@@ -150,8 +151,13 @@ const MockInterview = () => {
     }
   };
 
-  // 5. Advance to Next Question
+  // 5. Advance to Next Question or Final Phase 14 Report
   const handleProceedNext = () => {
+    if (latestFeedback?.isCompleted) {
+      navigate(`/interview-report/${activeSession.id}`);
+      return;
+    }
+
     setLatestFeedback(null);
     setCandidateAnswer('');
     setSecondsElapsed(0);
@@ -163,6 +169,7 @@ const MockInterview = () => {
       setCurrentTurn(null);
       setActiveSession((prev) => ({ ...prev, status: 'completed' }));
       loadPastSessions();
+      navigate(`/interview-report/${activeSession.id}`);
     }
   };
 
@@ -239,6 +246,7 @@ const MockInterview = () => {
         {activeSession && activeSession.status === 'in_progress' ? (
           <div className="row g-4">
             <div className="col-lg-8">
+              {/* Question Turn Card */}
               {currentTurn && !latestFeedback && (
                 <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
                   <div className="d-flex justify-content-between align-items-center mb-3">
@@ -304,6 +312,7 @@ const MockInterview = () => {
                 </div>
               )}
 
+              {/* Real-Time Evaluation Feedback Card */}
               {latestFeedback && (
                 <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4 border-top border-4 border-success">
                   <div className="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
@@ -334,7 +343,9 @@ const MockInterview = () => {
                   <div className="p-3 bg-light rounded-3 mb-3">
                     <div className="small fw-bold text-dark mb-1">Evaluator Feedback:</div>
                     <p className="small text-dark mb-0">
-                      {latestFeedback.feedback?.feedback || latestFeedback.feedback?.summary || 'Good attempt providing structured context.'}
+                      {latestFeedback.feedback?.feedback ||
+                        latestFeedback.feedback?.summary ||
+                        'Good attempt providing structured context.'}
                     </p>
                   </div>
 
@@ -380,13 +391,22 @@ const MockInterview = () => {
 
                   <div className="text-end">
                     <button className="btn btn-primary px-4" onClick={handleProceedNext}>
-                      {latestFeedback.isCompleted ? 'View Final Report' : 'Next Question'} <i className="bi bi-chevron-right ms-1"></i>
+                      {latestFeedback.isCompleted ? (
+                        <>
+                          <i className="bi bi-file-earmark-bar-graph me-2"></i>View Performance Report
+                        </>
+                      ) : (
+                        <>
+                          Next Question <i className="bi bi-chevron-right ms-1"></i>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* In-Session Sidebar: Progress & Transcript */}
             <div className="col-lg-4">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4 sticky-top" style={{ top: '80px' }}>
                 <h6 className="fw-bold text-dark mb-3">Session Progress</h6>
@@ -438,9 +458,10 @@ const MockInterview = () => {
           </div>
         ) : (
           /* ========================================================================= */
-          /* VIEW B: SETUP LAUNCHER & PAST RECORDS                                     */
+          /* VIEW B: SETUP LAUNCHER & PAST RECORDS (Default View)                     */
           /* ========================================================================= */
           <div className="row g-4">
+            {/* Configure Session Form */}
             <div className="col-lg-7">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4">
                 <h4 className="fw-bold text-dark mb-4">Configure Your Interview Session</h4>
@@ -531,6 +552,7 @@ const MockInterview = () => {
               </div>
             </div>
 
+            {/* Recent Interview Records */}
             <div className="col-lg-5">
               <div className="card border-0 shadow-sm rounded-4 bg-white p-4 h-100">
                 <div className="d-flex justify-content-between align-items-center mb-3">
@@ -585,6 +607,13 @@ const MockInterview = () => {
                           <button
                             className="btn btn-outline-primary btn-sm py-1 px-2"
                             style={{ fontSize: '12px' }}
+                            onClick={() => navigate(`/interview-report/${s.id}`)}
+                          >
+                            Report
+                          </button>
+                          <button
+                            className="btn btn-outline-secondary btn-sm py-1 px-2"
+                            style={{ fontSize: '12px' }}
                             onClick={() => setSelectedReviewSession(s)}
                           >
                             Review
@@ -607,7 +636,7 @@ const MockInterview = () => {
             <div className="modal-content border-0 shadow-lg rounded-4">
               <div className="modal-header border-bottom py-3">
                 <div>
-                  <h5 className="modal-title fw-bold text-dark mb-0">Interview Session Report</h5>
+                  <h5 className="modal-title fw-bold text-dark mb-0">Interview Session Transcript</h5>
                   <div className="text-muted small">
                     {selectedReviewSession.role_target} • {selectedReviewSession.difficulty} •{' '}
                     {new Date(selectedReviewSession.created_at).toLocaleDateString()}
@@ -630,15 +659,27 @@ const MockInterview = () => {
                         : 'Completed'}
                     </div>
                   </div>
-                  <span
-                    className={`badge px-3 py-2 fs-6 ${
-                      selectedReviewSession.status === 'completed' || selectedReviewSession.status === 'Completed'
-                        ? 'bg-success'
-                        : 'bg-secondary'
-                    }`}
-                  >
-                    {selectedReviewSession.status}
-                  </span>
+                  <div className="d-flex align-items-center gap-2">
+                    <span
+                      className={`badge px-3 py-2 fs-6 ${
+                        selectedReviewSession.status === 'completed' || selectedReviewSession.status === 'Completed'
+                          ? 'bg-success'
+                          : 'bg-secondary'
+                      }`}
+                    >
+                      {selectedReviewSession.status}
+                    </span>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => {
+                        const targetId = selectedReviewSession.id;
+                        setSelectedReviewSession(null);
+                        navigate(`/interview-report/${targetId}`);
+                      }}
+                    >
+                      <i className="bi bi-file-earmark-bar-graph me-1"></i> Full Report
+                    </button>
+                  </div>
                 </div>
 
                 <h6 className="fw-bold text-dark mb-3">Transcript & Question Breakdown</h6>
@@ -667,9 +708,10 @@ const MockInterview = () => {
                           {turn.candidate_answer || <span className="text-muted fst-italic">Unanswered</span>}
                         </div>
 
-                        {feedbackParsed?.feedback && (
+                        {(feedbackParsed?.feedback || feedbackParsed?.summary) && (
                           <div className="small text-muted mb-2">
-                            <strong className="text-secondary">AI Critique:</strong> {feedbackParsed.feedback}
+                            <strong className="text-secondary">AI Critique:</strong>{' '}
+                            {feedbackParsed.feedback || feedbackParsed.summary}
                           </div>
                         )}
 
