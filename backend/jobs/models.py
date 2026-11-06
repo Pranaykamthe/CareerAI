@@ -30,7 +30,12 @@ class Job(models.Model):
     job_type = models.CharField(max_length=50, choices=JOB_TYPE_CHOICES, default='Full-time')
     experience_level = models.CharField(max_length=50, choices=EXPERIENCE_LEVEL_CHOICES, default='Mid Level')
     min_experience_years = models.PositiveIntegerField(default=1)
-    salary_range = models.CharField(max_length=100, blank=True, default='')
+    salary_range = models.CharField(
+        max_length=100, 
+        blank=True, 
+        default='', 
+        help_text="Compensation package in LPA (e.g. '₹12 - ₹18 LPA')"
+    )
     description = models.TextField()
     required_skills = models.JSONField(default=list, help_text="List of required technical skills")
     preferred_skills = models.JSONField(default=list, blank=True, help_text="List of preferred nice-to-have skills")
@@ -43,4 +48,4 @@ class Job(models.Model):
         ordering = ['-created_at']
 
     def __str__(self):
-        return f"{self.title} at {self.company}"
+        return f"{self.title} at {self.company} ({self.salary_range or 'Salary Undisclosed'})"
