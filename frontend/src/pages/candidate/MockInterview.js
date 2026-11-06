@@ -1,459 +1,731 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { interviewService } from '../../services/interviewService';
 import { Navbar } from '../../components/layout/Navbar';
+import { interviewService } from '../../services/interviewService';
 
 const MockInterview = () => {
-  // Session Configuration Form
-  const [config, setConfig] = useState({
-    role_target: 'Python / Django Developer',
-    category: 'Mixed',
-    difficulty: 'Medium',
-    total_questions: 3,
-  });
+  // Session Configuration & History State
+  const [recentSessions, setRecentSessions] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [historyError, setHistoryError] = useState(null);
+
+  // Setup Form State
+  const [roleTarget, setRoleTarget] = useState('Junior Full Stack Engineer');
+  const [category, setCategory] = useState('Mixed');
+  const [difficulty, setDifficulty] = useState('Medium');
+  const [totalQuestions, setTotalQuestions] = useState(3);
+  const [isStarting, setIsStarting] = useState(false);
 
   // Active Session State
   const [activeSession, setActiveSession] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [starting, setStarting] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState(null);
+  const [currentTurn, setCurrentTurn] = useState(null);
+  const [candidateAnswer, setCandidateAnswer] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
 
-  // Turn Input State
-  const [answerInput, setAnswerInput] = useState('');
-  const [timerSeconds, setTimerSeconds] = useState(0);
-  const [timerActive, setTimerActive] = useState(false);
+  // Phase 12 AI Evaluation Turn Result
+  const [latestFeedback, setLatestFeedback] = useState(null);
 
-  const answerBoxRef = useRef(null);
+  // Review Modal State
+  const [selectedReviewSession, setSelectedReviewSession] = useState(null);
 
-  // Tick timer while answering
-  useEffect(() => {
-    let interval = null;
-    if (timerActive) {
-      interval = setInterval(() => {
-        setTimerSeconds((prev) => prev + 1);
-      }, 1000);
+  // Timer State
+  const [secondsElapsed, setSecondsElapsed] = useState(0);
+  const timerRef = useRef(null);
+
+  // 1. Load Past Sessions
+  const loadPastSessions = async () => {
+    setLoadingHistory(true);
+    setHistoryError(null);
+    try {
+      const data = await interviewService.getUserSessions();
+      setRecentSessions(Array.isArray(data) ? data : data.results || []);
+    } catch (err) {
+      setHistoryError('Failed to load past interview sessions.');
+    } finally {
+      setLoadingHistory(false);
     }
-    return () => clearInterval(interval);
-  }, [timerActive]);
-
-  // Format seconds to MM:SS
-  const formatTime = (secs) => {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
-  // Start new session
+  useEffect(() => {
+    loadPastSessions();
+  }, []);
+
+  // 2. Timer Lifecycle
+  useEffect(() => {
+    if (activeSession && activeSession.status === 'in_progress') {
+      timerRef.current = setInterval(() => {
+        setSecondsElapsed((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, [activeSession]);
+
+  const formatTimer = (totalSec) => {
+    const mins = Math.floor(totalSec / 60);
+    const secs = totalSec % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  // 3. Start New Session
   const handleStartSession = async (e) => {
     e.preventDefault();
-    setStarting(true);
-    setError(null);
+    setIsStarting(true);
+    setSubmitError(null);
     try {
-      const data = await interviewService.startSession(config);
-      setActiveSession(data);
-      setAnswerInput('');
-      setTimerSeconds(0);
-      setTimerActive(true);
+      const payload = {
+        role_target: roleTarget,
+        category: category,
+        difficulty: difficulty,
+        total_questions: parseInt(totalQuestions, 10),
+      };
+      const session = await interviewService.startSession(payload);
+      setActiveSession(session);
+
+      // Locate first unanswered turn
+      const firstTurn = session.turns?.find((t) => !t.is_answered) || session.turns?.[0];
+      setCurrentTurn(firstTurn);
+      setCandidateAnswer('');
+      setLatestFeedback(null);
+      setSecondsElapsed(0);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to start interview session.');
+      setSubmitError(err.response?.data?.detail || 'Failed to initialize interview session.');
     } finally {
-      setStarting(false);
+      setIsStarting(false);
     }
   };
 
-  // Submit candidate answer
-  const handleSubmitAnswer = async (e) => {
-    e.preventDefault();
-    if (!answerInput.trim()) {
-      alert('Please provide an answer before submitting.');
+  // 4. Submit Answer & Run Phase 12 Evaluation
+  const handleSubmitAnswer = async () => {
+    if (!candidateAnswer.trim()) {
+      alert('Please type your response before submitting.');
       return;
     }
 
-    setSubmitting(true);
-    setError(null);
+    setIsSubmitting(true);
+    setSubmitError(null);
+
     try {
-      const res = await interviewService.submitAnswer(activeSession.id, {
-        answer: answerInput.trim(),
-        time_taken_seconds: timerSeconds,
+      const payload = {
+        turn_id: currentTurn?.id,
+        candidate_answer: candidateAnswer.trim(),
+        answer: candidateAnswer.trim(),
+        time_spent_seconds: secondsElapsed,
+        time_taken_seconds: secondsElapsed,
+      };
+
+      const res = await interviewService.submitAnswer(activeSession.id, payload);
+
+      // Extract feedback
+      const feedbackObj = res.feedback || (res.turn?.ai_feedback ? JSON.parse(res.turn.ai_feedback) : null);
+      setLatestFeedback({
+        score: res.ai_score ?? res.turn?.ai_score ?? 75,
+        feedback: feedbackObj,
+        better_answer: res.better_answer || res.turn?.better_answer || '',
       });
 
-      setActiveSession(res.session);
-      setAnswerInput('');
-      setTimerSeconds(0);
+      // Update Session
+      const updatedSession = res.session || (await interviewService.getSessionById(activeSession.id));
+      setActiveSession(updatedSession);
 
-      if (res.session.status === 'completed') {
-        setTimerActive(false);
-      } else {
-        setTimeout(() => {
-          if (answerBoxRef.current) answerBoxRef.current.focus();
-        }, 100);
-      }
+      // Refresh recent records in background
+      loadPastSessions();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error submitting answer. Please retry.');
+      setSubmitError(err.response?.data?.detail || 'Failed to submit answer for evaluation.');
     } finally {
-      setSubmitting(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Cancel / End early
+  // 5. Advance to Next Question
+  const handleProceedNext = () => {
+    setLatestFeedback(null);
+    setCandidateAnswer('');
+    setSecondsElapsed(0);
+
+    const nextTurn = activeSession.turns?.find((t) => !t.is_answered);
+    if (nextTurn) {
+      setCurrentTurn(nextTurn);
+    } else {
+      // All answered
+      setCurrentTurn(null);
+    }
+  };
+
+  // 6. Cancel In-Progress Session
   const handleCancelSession = async () => {
-    if (!window.confirm('Are you sure you want to end this interview session early?')) return;
+    if (!window.confirm('Are you sure you want to exit this mock interview? Progress will be cancelled.')) return;
     try {
       await interviewService.cancelSession(activeSession.id);
       setActiveSession(null);
-      setTimerActive(false);
-      setTimerSeconds(0);
-      setAnswerInput('');
+      setCurrentTurn(null);
+      setLatestFeedback(null);
+      loadPastSessions();
     } catch (err) {
-      alert('Failed to exit session.');
+      alert('Error cancelling session.');
     }
   };
 
-  // Determine current active turn
-  const currentTurn = activeSession?.turns?.find((t) => !t.is_answered);
-  const completedTurns = activeSession?.turns?.filter((t) => t.is_answered) || [];
+  // Calculate Metrics
+  const completedSessions = recentSessions.filter((s) => s.status === 'completed');
+  const avgScore = completedSessions.length
+    ? Math.round(
+        completedSessions.reduce((acc, curr) => acc + (curr.overall_score || 0), 0) / completedSessions.length
+      )
+    : 0;
 
   return (
     <div className="min-vh-100 bg-light">
+      {/* 1. Global Navbar */}
       <Navbar />
 
       <div className="container py-4">
-        {/* Error Banner */}
-        {error && (
-          <div className="alert alert-danger alert-dismissible fade show shadow-sm" role="alert">
-            <i className="bi bi-exclamation-triangle-fill me-2"></i>
-            {error}
-            <button type="button" className="btn-close" onClick={() => setError(null)}></button>
+        {/* Top Header & Metrics Bar */}
+        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+          <div>
+            <h2 className="fw-bold text-dark mb-1">
+              <i className="bi bi-mic-fill text-primary me-2"></i>AI Mock Interview Simulator
+            </h2>
+            <p className="text-muted small mb-0">
+              Practice real-world questions with real-time AI scoring, STAR rubrics, and constructive critique.
+            </p>
           </div>
-        )}
-
-        {/* ================= STATE 1: SETUP LAUNCHER ================= */}
-        {!activeSession && (
-          <div className="row justify-content-center">
-            <div className="col-12 col-lg-8">
-              <div className="card border-0 shadow-sm rounded-4 overflow-hidden">
-                <div className="bg-primary text-white p-4 p-md-5 text-center">
-                  <div className="d-inline-flex p-3 rounded-circle bg-white bg-opacity-25 mb-3">
-                    <i className="bi bi-mic-fill fs-2"></i>
-                  </div>
-                  <h2 className="fw-bold mb-2">AI Mock Interview Simulator</h2>
-                  <p className="mb-0 text-white-50">
-                    Configure your session parameters to simulate realistic technical, behavioral, and architectural interviews.
-                  </p>
-                </div>
-
-                <div className="card-body p-4 p-md-5">
-                  <form onSubmit={handleStartSession}>
-                    {/* Target Role */}
-                    <div className="mb-4">
-                      <label className="form-label fw-bold small text-muted text-uppercase">
-                        Target Role / Specialization
-                      </label>
-                      <input
-                        type="text"
-                        className="form-control form-control-lg fs-6"
-                        value={config.role_target}
-                        onChange={(e) => setConfig({ ...config, role_target: e.target.value })}
-                        placeholder="e.g. Full Stack Developer, Data Engineer, Python Developer"
-                        required
-                      />
-                    </div>
-
-                    <div className="row g-3 mb-4">
-                      {/* Interview Category */}
-                      <div className="col-12 col-md-6">
-                        <label className="form-label fw-bold small text-muted text-uppercase">
-                          Interview Format
-                        </label>
-                        <select
-                          className="form-select form-select-lg fs-6"
-                          value={config.category}
-                          onChange={(e) => setConfig({ ...config, category: e.target.value })}
-                        >
-                          <option value="Mixed">Comprehensive Mixed (Technical + HR + STAR)</option>
-                          <option value="Technical">Technical & Coding Architecture</option>
-                          <option value="HR">HR & Culture Fit</option>
-                          <option value="Behavioral">Behavioral (STAR Method)</option>
-                          <option value="Project-based">Project Architecture Deep Dive</option>
-                        </select>
-                      </div>
-
-                      {/* Difficulty Level */}
-                      <div className="col-12 col-md-6">
-                        <label className="form-label fw-bold small text-muted text-uppercase">
-                          Experience Tier
-                        </label>
-                        <select
-                          className="form-select form-select-lg fs-6"
-                          value={config.difficulty}
-                          onChange={(e) => setConfig({ ...config, difficulty: e.target.value })}
-                        >
-                          <option value="Easy">Easy (Entry Level 0-2 yrs)</option>
-                          <option value="Medium">Medium (Mid Level 2-5 yrs)</option>
-                          <option value="Hard">Hard (Senior / Lead 5+ yrs)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Question Count Selection */}
-                    <div className="mb-4">
-                      <label className="form-label fw-bold small text-muted text-uppercase d-block">
-                        Session Length
-                      </label>
-                      <div className="row g-2">
-                        {[3, 5, 7].map((num) => (
-                          <div key={num} className="col-4">
-                            <button
-                              type="button"
-                              className={`btn w-100 py-2 ${
-                                config.total_questions === num
-                                  ? 'btn-primary fw-bold shadow-sm'
-                                  : 'btn-outline-secondary'
-                              }`}
-                              onClick={() => setConfig({ ...config, total_questions: num })}
-                            >
-                              {num} Questions
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Launch Action */}
-                    <div className="d-grid mt-4">
-                      <button
-                        type="submit"
-                        className="btn btn-primary btn-lg fw-bold py-3 shadow"
-                        disabled={starting}
-                      >
-                        {starting ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-2"></span>
-                            Configuring Interview Environment...
-                          </>
-                        ) : (
-                          <>
-                            <i className="bi bi-play-circle-fill me-2"></i>
-                            Begin Mock Interview Session
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
+          <div className="d-flex gap-2">
+            <div className="card border-0 shadow-sm px-3 py-2 bg-white d-flex flex-row align-items-center gap-2">
+              <div className="rounded-circle bg-primary bg-opacity-10 p-2 text-primary">
+                <i className="bi bi-trophy-fill"></i>
+              </div>
+              <div>
+                <div className="text-muted" style={{ fontSize: '10px' }}>AVG SCORE</div>
+                <div className="fw-bold text-dark">{avgScore > 0 ? `${avgScore}%` : 'N/A'}</div>
+              </div>
+            </div>
+            <div className="card border-0 shadow-sm px-3 py-2 bg-white d-flex flex-row align-items-center gap-2">
+              <div className="rounded-circle bg-success bg-opacity-10 p-2 text-success">
+                <i className="bi bi-check2-all"></i>
+              </div>
+              <div>
+                <div className="text-muted" style={{ fontSize: '10px' }}>COMPLETED</div>
+                <div className="fw-bold text-dark">{completedSessions.length} Sessions</div>
               </div>
             </div>
           </div>
+        </div>
+
+        {submitError && (
+          <div className="alert alert-danger alert-dismissible fade show mb-4" role="alert">
+            <i className="bi bi-exclamation-triangle-fill me-2"></i>
+            {submitError}
+            <button type="button" className="btn-close" onClick={() => setSubmitError(null)}></button>
+          </div>
         )}
 
-        {/* ================= STATE 2: ACTIVE QUESTION SCREEN ================= */}
-        {activeSession && activeSession.status === 'in_progress' && currentTurn && (
-          <div className="row justify-content-center">
-            <div className="col-12 col-lg-10">
-              {/* Header Status Bar */}
-              <div className="card border-0 shadow-sm rounded-4 mb-4">
-                <div className="card-body p-3 p-md-4">
-                  <div className="d-flex flex-wrap align-items-center justify-content-between gap-3">
-                    <div>
-                      <span className="badge bg-primary bg-opacity-10 text-primary fw-bold px-3 py-2 rounded-pill me-2">
-                        <i className="bi bi-briefcase me-1"></i> {activeSession.role_target}
+        {/* ========================================================================= */}
+        {/* VIEW A: INTERVIEW RUNTIME (Active Session)                                */}
+        {/* ========================================================================= */}
+        {activeSession && activeSession.status === 'in_progress' ? (
+          <div className="row g-4">
+            <div className="col-lg-8">
+              {/* Question Turn Card */}
+              {currentTurn && !latestFeedback && (
+                <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="badge bg-primary px-3 py-2">
+                        Question {currentTurn.turn_number} of {activeSession.total_questions}
                       </span>
-                      <span className="badge bg-secondary bg-opacity-10 text-secondary fw-semibold px-2 py-2 rounded-pill me-2">
-                        {currentTurn.category}
+                      <span className="badge bg-light text-dark border">
+                        {currentTurn.category || activeSession.category}
                       </span>
-                      <span className="badge bg-info bg-opacity-10 text-info fw-semibold px-2 py-2 rounded-pill">
+                      <span className="badge bg-info bg-opacity-10 text-dark border border-info">
                         {activeSession.difficulty}
                       </span>
                     </div>
-
-                    <div className="d-flex align-items-center gap-3">
-                      {/* Timer */}
-                      <div className="d-flex align-items-center text-danger fw-bold fs-5 font-monospace bg-danger bg-opacity-10 px-3 py-1 rounded-pill">
-                        <i className="bi bi-stopwatch-fill me-2"></i>
-                        {formatTime(timerSeconds)}
-                      </div>
-
-                      {/* Exit */}
-                      <button
-                        className="btn btn-outline-danger btn-sm rounded-pill px-3"
-                        onClick={handleCancelSession}
-                      >
-                        <i className="bi bi-x-circle me-1"></i> End Session
-                      </button>
+                    <div className="badge bg-dark bg-opacity-10 text-dark px-3 py-2 font-monospace fs-6">
+                      <i className="bi bi-stopwatch text-primary me-1"></i>
+                      {formatTimer(secondsElapsed)}
                     </div>
                   </div>
 
-                  {/* Progress Indicator */}
-                  <div className="mt-3">
-                    <div className="d-flex justify-content-between small text-muted mb-1">
-                      <span>
-                        Question <strong>{currentTurn.turn_number}</strong> of {activeSession.total_questions}
-                      </span>
-                      <span>
-                        {Math.round(((currentTurn.turn_number - 1) / activeSession.total_questions) * 100)}% Complete
-                      </span>
-                    </div>
-                    <div className="progress" style={{ height: '8px' }}>
-                      <div
-                        className="progress-bar progress-bar-striped progress-bar-animated bg-primary"
-                        role="progressbar"
-                        style={{
-                          width: `${((currentTurn.turn_number - 1) / activeSession.total_questions) * 100}%`,
-                        }}
-                      ></div>
-                    </div>
+                  <h4 className="fw-bold text-dark mb-4">{currentTurn.question_text}</h4>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-muted d-flex justify-content-between">
+                      <span>Your Response (STAR Method recommended)</span>
+                      <span>{candidateAnswer.trim().split(/\s+/).filter(Boolean).length} words</span>
+                    </label>
+                    <textarea
+                      className="form-control"
+                      rows="8"
+                      placeholder="Structure your answer with Situation, Task, Action, and Result..."
+                      value={candidateAnswer}
+                      onChange={(e) => setCandidateAnswer(e.target.value)}
+                      disabled={isSubmitting}
+                    ></textarea>
+                  </div>
+
+                  <div className="d-flex justify-content-between align-items-center">
+                    <button
+                      className="btn btn-outline-danger btn-sm"
+                      onClick={handleCancelSession}
+                      disabled={isSubmitting}
+                    >
+                      <i className="bi bi-x-circle me-1"></i> Exit Session
+                    </button>
+                    <button
+                      className="btn btn-primary px-4"
+                      onClick={handleSubmitAnswer}
+                      disabled={isSubmitting || !candidateAnswer.trim()}
+                    >
+                      {isSubmitting ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                          AI Evaluating Answer...
+                        </>
+                      ) : (
+                        <>
+                          Submit Answer & Evaluate <i className="bi bi-arrow-right ms-1"></i>
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Question Delivery Card */}
-              <div className="card border-0 shadow-sm rounded-4 mb-4">
-                <div className="card-body p-4 p-md-5">
-                  <div className="d-flex align-items-center gap-2 mb-3">
-                    <span className="badge bg-primary rounded-pill px-3 py-2 fs-6">
-                      Question #{currentTurn.turn_number}
-                    </span>
-                    <span className="text-muted small">Interview Prompt</span>
-                  </div>
-
-                  <h4 className="fw-bold text-dark lh-base mb-4">
-                    {currentTurn.question_text}
-                  </h4>
-
-                  {/* Structured Answer Box */}
-                  <form onSubmit={handleSubmitAnswer}>
-                    <div className="mb-3">
-                      <label className="form-label fw-semibold text-muted small text-uppercase">
-                        Your Professional Response
-                      </label>
-                      <textarea
-                        ref={answerBoxRef}
-                        className="form-control rounded-3 p-3 fs-6"
-                        rows="7"
-                        placeholder="Structure your thoughts clearly. For technical questions, mention core mechanisms, trade-offs, and examples. For behavioral questions, highlight the Situation, Task, Action, and Result (STAR)."
-                        value={answerInput}
-                        onChange={(e) => setAnswerInput(e.target.value)}
-                        required
-                        disabled={submitting}
-                      ></textarea>
-                    </div>
-
-                    <div className="d-flex flex-wrap justify-content-between align-items-center gap-2">
-                      <div className="small text-muted">
-                        <i className="bi bi-info-circle me-1"></i>
-                        Words: <strong>{answerInput.trim() ? answerInput.trim().split(/\s+/).length : 0}</strong> |
-                        Characters: <strong>{answerInput.length}</strong>
-                      </div>
-
-                      <button
-                        type="submit"
-                        className="btn btn-primary px-4 py-2 fw-bold shadow-sm"
-                        disabled={submitting || !answerInput.trim()}
-                      >
-                        {submitting ? (
-                          <>
-                            <span className="spinner-border spinner-border-sm me-2"></span>
-                            Recording Answer...
-                          </>
-                        ) : (
-                          <>
-                            Submit Answer & Next
-                            <i className="bi bi-arrow-right ms-2"></i>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              </div>
-
-              {/* Transcript of Completed Turns in this Session */}
-              {completedTurns.length > 0 && (
-                <div className="card border-0 shadow-sm rounded-4">
-                  <div className="card-header bg-white border-0 pt-4 px-4">
-                    <h5 className="fw-bold mb-0 text-dark">
-                      <i className="bi bi-chat-left-quote-fill text-primary me-2"></i>
-                      Session Transcript So Far ({completedTurns.length})
+              {/* Phase 12 AI Evaluation Feedback Display */}
+              {latestFeedback && (
+                <div className="card border-0 shadow-sm rounded-4 bg-white p-4 mb-4">
+                  <div className="d-flex justify-content-between align-items-center border-bottom pb-3 mb-3">
+                    <h5 className="fw-bold text-dark mb-0">
+                      <i className="bi bi-cpu-fill text-primary me-2"></i>Real-Time AI Evaluation
                     </h5>
-                  </div>
-                  <div className="card-body p-4">
-                    <div className="d-flex flex-column gap-3">
-                      {completedTurns.map((turn) => (
-                        <div key={turn.id} className="p-3 rounded-3 bg-light border">
-                          <div className="d-flex justify-content-between align-items-center mb-1">
-                            <span className="fw-bold small text-primary">
-                              Q{turn.turn_number}: {turn.question_text}
-                            </span>
-                            <span className="badge bg-success bg-opacity-10 text-success rounded-pill">
-                              <i className="bi bi-check-circle me-1"></i> Answered
-                            </span>
-                          </div>
-                          <p className="text-secondary small mb-0 mt-2 fst-italic">
-                            "{turn.candidate_answer}"
-                          </p>
-                        </div>
-                      ))}
+                    <div className="d-flex align-items-center gap-2">
+                      <span className="small text-muted">Turn Score:</span>
+                      <span
+                        className={`badge fs-6 px-3 py-2 ${
+                          latestFeedback.score >= 80
+                            ? 'bg-success'
+                            : latestFeedback.score >= 60
+                            ? 'bg-warning text-dark'
+                            : 'bg-danger'
+                        }`}
+                      >
+                        {latestFeedback.score} / 100
+                      </span>
                     </div>
+                  </div>
+
+                  {/* Feedback Summary */}
+                  <div className="p-3 bg-light rounded-3 mb-3">
+                    <div className="small fw-bold text-dark mb-1">Evaluator Feedback:</div>
+                    <p className="small text-muted mb-0">
+                      {latestFeedback.feedback?.summary || 'Good attempt providing structured context.'}
+                    </p>
+                  </div>
+
+                  {/* Strengths & Weaknesses */}
+                  <div className="row g-3 mb-3">
+                    <div className="col-md-6">
+                      <div className="card h-100 border-success border-opacity-25 bg-success bg-opacity-10 p-3 rounded-3">
+                        <div className="small fw-bold text-success mb-2">
+                          <i className="bi bi-check-circle-fill me-1"></i> Strengths Identified:
+                        </div>
+                        <ul className="mb-0 ps-3 small text-dark">
+                          {latestFeedback.feedback?.strengths?.length > 0 ? (
+                            latestFeedback.feedback.strengths.map((s, idx) => <li key={idx}>{s}</li>)
+                          ) : (
+                            <li>Clear delivery and relevant terminology used.</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                    <div className="col-md-6">
+                      <div className="card h-100 border-warning border-opacity-25 bg-warning bg-opacity-10 p-3 rounded-3">
+                        <div className="small fw-bold text-dark mb-2">
+                          <i className="bi bi-lightbulb-fill text-warning me-1"></i> Areas to Improve:
+                        </div>
+                        <ul className="mb-0 ps-3 small text-dark">
+                          {latestFeedback.feedback?.weaknesses?.length > 0 ? (
+                            latestFeedback.feedback.weaknesses.map((w, idx) => <li key={idx}>{w}</li>)
+                          ) : (
+                            <li>Add more quantitative metrics and specific outcomes.</li>
+                          )}
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Model Answer */}
+                  {latestFeedback.better_answer && (
+                    <div className="border rounded-3 p-3 bg-white mb-4">
+                      <div className="small fw-bold text-primary mb-1">
+                        <i className="bi bi-stars me-1"></i> Model / Ideal Talking Points:
+                      </div>
+                      <p className="small text-muted mb-0">{latestFeedback.better_answer}</p>
+                    </div>
+                  )}
+
+                  <div className="text-end">
+                    <button className="btn btn-primary px-4" onClick={handleProceedNext}>
+                      Next Question <i className="bi bi-chevron-right ms-1"></i>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Completion Screen if no more turns */}
+              {!currentTurn && !latestFeedback && (
+                <div className="card border-0 shadow-sm rounded-4 bg-white p-5 text-center mb-4">
+                  <div
+                    className="rounded-circle bg-success bg-opacity-10 text-success mx-auto d-flex align-items-center justify-content-center mb-3"
+                    style={{ width: '70px', height: '70px', fontSize: '32px' }}
+                  >
+                    <i className="bi bi-trophy-fill"></i>
+                  </div>
+                  <h3 className="fw-bold text-dark mb-2">Mock Interview Completed!</h3>
+                  <p className="text-muted small mb-4">
+                    All {activeSession.total_questions} questions have been answered and evaluated.
+                  </p>
+                  <div className="d-flex justify-content-center gap-3">
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => {
+                        setSelectedReviewSession(activeSession);
+                        setActiveSession(null);
+                      }}
+                    >
+                      <i className="bi bi-journal-text me-1"></i> View Full Session Transcript
+                    </button>
+                    <button className="btn btn-outline-secondary" onClick={() => setActiveSession(null)}>
+                      Start Another Session
+                    </button>
                   </div>
                 </div>
               )}
             </div>
-          </div>
-        )}
 
-        {/* ================= STATE 3: SESSION COMPLETED ================= */}
-        {activeSession && activeSession.status === 'completed' && (
-          <div className="row justify-content-center">
-            <div className="col-12 col-lg-8">
-              <div className="card border-0 shadow-sm rounded-4 text-center p-5 bg-white">
-                <div className="d-inline-flex p-4 rounded-circle bg-success bg-opacity-10 text-success mx-auto mb-4">
-                  <i className="bi bi-trophy-fill display-4"></i>
+            {/* In-Session Sidebar: Progress & Transcript */}
+            <div className="col-lg-4">
+              <div className="card border-0 shadow-sm rounded-4 bg-white p-4 sticky-top" style={{ top: '80px' }}>
+                <h6 className="fw-bold text-dark mb-3">Session Progress</h6>
+                <div className="progress mb-3" style={{ height: '8px' }}>
+                  <div
+                    className="progress-bar bg-primary"
+                    role="progressbar"
+                    style={{
+                      width: `${
+                        ((activeSession.turns?.filter((t) => t.is_answered).length || 0) /
+                          activeSession.total_questions) *
+                        100
+                      }%`,
+                    }}
+                  ></div>
                 </div>
-                <h2 className="fw-bold text-dark mb-2">Mock Interview Completed!</h2>
-                <p className="text-muted mb-4 fs-6">
-                  Great work! You have answered all <strong>{activeSession.total_questions}</strong> questions for{' '}
-                  <strong>{activeSession.role_target}</strong>.
-                </p>
+                <div className="d-flex justify-content-between small text-muted mb-4">
+                  <span>
+                    Answered: {activeSession.turns?.filter((t) => t.is_answered).length} of{' '}
+                    {activeSession.total_questions}
+                  </span>
+                  <span>Target: {activeSession.role_target}</span>
+                </div>
 
-                <div className="p-4 rounded-4 bg-light text-start mb-4">
-                  <h6 className="fw-bold text-uppercase text-muted small mb-3">Session Summary</h6>
-                  <div className="row g-3">
-                    <div className="col-6 col-md-3">
-                      <div className="small text-muted">Role</div>
-                      <div className="fw-bold text-dark text-truncate">{activeSession.role_target}</div>
+                <h6 className="fw-bold text-dark mb-2">Questions In This Session</h6>
+                <div className="list-group list-group-flush small">
+                  {activeSession.turns?.map((t) => (
+                    <div
+                      key={t.id || t.turn_number}
+                      className={`list-group-item px-0 py-2 d-flex justify-content-between align-items-center ${
+                        currentTurn?.turn_number === t.turn_number ? 'fw-bold text-primary' : 'text-muted'
+                      }`}
+                    >
+                      <span className="text-truncate me-2" style={{ maxWidth: '200px' }}>
+                        {t.turn_number}. {t.question_text}
+                      </span>
+                      {t.is_answered ? (
+                        <span className="badge bg-success bg-opacity-10 text-success border border-success">
+                          {t.ai_score ? `${t.ai_score}%` : 'Done'}
+                        </span>
+                      ) : (
+                        <span className="badge bg-light text-muted border">Pending</span>
+                      )}
                     </div>
-                    <div className="col-6 col-md-3">
-                      <div className="small text-muted">Format</div>
-                      <div className="fw-bold text-dark">{activeSession.category}</div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ========================================================================= */
+          /* VIEW B: SETUP LAUNCHER & PAST RECORDS (Default View)                     */
+          /* ========================================================================= */
+          <div className="row g-4">
+            {/* Left: Configure Session Form */}
+            <div className="col-lg-7">
+              <div className="card border-0 shadow-sm rounded-4 bg-white p-4">
+                <h4 className="fw-bold text-dark mb-4">Configure Your Interview Session</h4>
+
+                <form onSubmit={handleStartSession}>
+                  {/* Target Job Role */}
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark">Target Job Role</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Junior Full Stack Engineer"
+                      value={roleTarget}
+                      onChange={(e) => setRoleTarget(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="row g-3 mb-3">
+                    {/* Category Track */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-dark">Interview Track</label>
+                      <select
+                        className="form-select"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                      >
+                        <option value="Mixed">Mixed (Technical + HR + STAR)</option>
+                        <option value="Technical">Technical</option>
+                        <option value="HR">HR / Behavioral</option>
+                        <option value="System Design">System Design</option>
+                      </select>
                     </div>
-                    <div className="col-6 col-md-3">
-                      <div className="small text-muted">Difficulty</div>
-                      <div className="fw-bold text-dark">{activeSession.difficulty}</div>
-                    </div>
-                    <div className="col-6 col-md-3">
-                      <div className="small text-muted">Questions</div>
-                      <div className="fw-bold text-dark">{activeSession.total_questions} Answered</div>
+
+                    {/* Difficulty Tier */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-dark">Difficulty Level</label>
+                      <select
+                        className="form-select"
+                        value={difficulty}
+                        onChange={(e) => setDifficulty(e.target.value)}
+                      >
+                        <option value="Easy">Easy (Entry Level)</option>
+                        <option value="Medium">Medium (Mid Level)</option>
+                        <option value="Hard">Hard (Senior / Lead)</option>
+                      </select>
                     </div>
                   </div>
+
+                  {/* Question Count Selector */}
+                  <div className="mb-4">
+                    <label className="form-label small fw-semibold text-dark d-block mb-2">
+                      Number of Questions
+                    </label>
+                    <div className="d-flex gap-3">
+                      {[3, 5, 7].map((num) => (
+                        <div key={num} className="form-check">
+                          <input
+                            className="form-check-input"
+                            type="radio"
+                            name="questionCount"
+                            id={`qCount${num}`}
+                            value={num}
+                            checked={parseInt(totalQuestions, 10) === num}
+                            onChange={(e) => setTotalQuestions(e.target.value)}
+                          />
+                          <label className="form-check-label small" htmlFor={`qCount${num}`}>
+                            {num} Questions
+                          </label>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="btn btn-primary w-100 py-2 d-flex align-items-center justify-content-center gap-2 fw-semibold"
+                    disabled={isStarting}
+                  >
+                    {isStarting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status"></span>
+                        Starting Simulator...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-play-circle-fill"></i> Begin Mock Interview Session
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right: Recent Interview Records */}
+            <div className="col-lg-5">
+              <div className="card border-0 shadow-sm rounded-4 bg-white p-4 h-100">
+                <div className="d-flex justify-content-between align-items-center mb-3">
+                  <h5 className="fw-bold text-dark mb-0">Recent Interview Records</h5>
+                  <button
+                    className="btn btn-link btn-sm text-decoration-none p-0 text-muted"
+                    onClick={loadPastSessions}
+                    title="Refresh records"
+                  >
+                    <i className="bi bi-arrow-clockwise"></i>
+                  </button>
                 </div>
 
-                <div className="d-flex flex-wrap justify-content-center gap-3">
-                  <button
-                    className="btn btn-primary px-4 py-2 fw-bold"
-                    onClick={() => setActiveSession(null)}
-                  >
-                    <i className="bi bi-arrow-repeat me-1"></i> Start Another Mock Interview
-                  </button>
-                  <Link to="/question-bank" className="btn btn-outline-secondary px-4 py-2">
-                    <i className="bi bi-collection-play me-1"></i> Practice Question Catalog
-                  </Link>
-                </div>
+                {loadingHistory ? (
+                  <div className="text-center py-5">
+                    <div className="spinner-border spinner-border-sm text-primary" role="status"></div>
+                    <div className="text-muted small mt-2">Loading sessions...</div>
+                  </div>
+                ) : historyError ? (
+                  <div className="alert alert-light text-danger small py-3">{historyError}</div>
+                ) : recentSessions.length === 0 ? (
+                  <div className="text-center py-5 text-muted small">
+                    <i className="bi bi-journal-x fs-2 d-block mb-2 text-secondary"></i>
+                    No previous mock sessions found. Start your first session on the left!
+                  </div>
+                ) : (
+                  <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: '420px' }}>
+                    {recentSessions.map((s) => (
+                      <div
+                        key={s.id}
+                        className="list-group-item px-0 py-3 d-flex justify-content-between align-items-center"
+                      >
+                        <div>
+                          <div className="fw-bold text-dark small">{s.role_target}</div>
+                          <div className="text-muted" style={{ fontSize: '11px' }}>
+                            • {s.difficulty} • {new Date(s.created_at).toLocaleDateString()}
+                          </div>
+                        </div>
+
+                        <div className="d-flex align-items-center gap-2">
+                          {s.overall_score !== null && s.overall_score !== undefined && (
+                            <span
+                              className={`badge rounded-pill ${
+                                s.overall_score >= 75
+                                  ? 'bg-success bg-opacity-10 text-success border border-success'
+                                  : 'bg-primary bg-opacity-10 text-primary border border-primary'
+                              }`}
+                            >
+                              {s.overall_score}%
+                            </span>
+                          )}
+                          <button
+                            className="btn btn-outline-primary btn-sm py-1 px-2"
+                            style={{ fontSize: '12px' }}
+                            onClick={() => setSelectedReviewSession(s)}
+                          >
+                            Review
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           </div>
         )}
       </div>
+
+      {/* ========================================================================= */}
+      {/* 4. MODAL: Past Interview Session Review & Transcript                     */}
+      {/* ========================================================================= */}
+      {selectedReviewSession && (
+        <div className="modal show fade d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content border-0 shadow-lg rounded-4">
+              <div className="modal-header border-bottom py-3">
+                <div>
+                  <h5 className="modal-title fw-bold text-dark mb-0">Interview Session Report</h5>
+                  <div className="text-muted small">
+                    {selectedReviewSession.role_target} • {selectedReviewSession.difficulty} •{' '}
+                    {new Date(selectedReviewSession.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setSelectedReviewSession(null)}
+                ></button>
+              </div>
+
+              <div className="modal-body p-4" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+                <div className="d-flex justify-content-between align-items-center p-3 bg-light rounded-3 mb-4">
+                  <div>
+                    <div className="small text-muted">Performance Verdict</div>
+                    <div className="fw-bold text-dark fs-5">
+                      {selectedReviewSession.overall_score
+                        ? `${selectedReviewSession.overall_score}% Average Score`
+                        : 'Completed'}
+                    </div>
+                  </div>
+                  <span
+                    className={`badge px-3 py-2 fs-6 ${
+                      selectedReviewSession.status === 'completed' ? 'bg-success' : 'bg-secondary'
+                    }`}
+                  >
+                    {selectedReviewSession.status}
+                  </span>
+                </div>
+
+                <h6 className="fw-bold text-dark mb-3">Transcript & Question Breakdown</h6>
+                {selectedReviewSession.turns?.length > 0 ? (
+                  selectedReviewSession.turns.map((turn) => {
+                    let feedbackParsed = null;
+                    try {
+                      feedbackParsed = turn.ai_feedback ? JSON.parse(turn.ai_feedback) : null;
+                    } catch (e) {
+                      feedbackParsed = { summary: turn.ai_feedback };
+                    }
+
+                    return (
+                      <div key={turn.id || turn.turn_number} className="card border rounded-3 p-3 mb-3 bg-white">
+                        <div className="d-flex justify-content-between align-items-start mb-2">
+                          <span className="fw-bold text-dark small">
+                            Question {turn.turn_number}: {turn.question_text}
+                          </span>
+                          {turn.ai_score !== null && turn.ai_score !== undefined && (
+                            <span className="badge bg-primary ms-2">{turn.ai_score} / 100</span>
+                          )}
+                        </div>
+
+                        <div className="bg-light p-2 rounded small text-dark mb-2">
+                          <strong>Your Answer:</strong>{' '}
+                          {turn.candidate_answer || <span className="text-muted fst-italic">Unanswered</span>}
+                        </div>
+
+                        {feedbackParsed?.summary && (
+                          <div className="small text-muted mb-2">
+                            <strong className="text-secondary">AI Critique:</strong> {feedbackParsed.summary}
+                          </div>
+                        )}
+
+                        {turn.better_answer && (
+                          <div className="small text-primary border-top pt-2">
+                            <strong>Recommended Model Answer:</strong> {turn.better_answer}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="text-muted small text-center py-3">No turns recorded for this session.</div>
+                )}
+              </div>
+
+              <div className="modal-footer border-top py-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setSelectedReviewSession(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
