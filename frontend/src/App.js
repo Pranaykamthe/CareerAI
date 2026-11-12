@@ -15,6 +15,7 @@ import CandidateDashboard from './pages/candidate/CandidateDashboard';
 import Profile from './pages/candidate/Profile';
 import ResumeManagement from './pages/candidate/ResumeManagement';
 import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
+import ResumeBuilder from './pages/candidate/ResumeBuilder';
 import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
 import Applications from './pages/candidate/Applications';
@@ -35,11 +36,24 @@ const CandidateFooter = () => (
         &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
       </div>
       <div className="d-flex gap-3 small">
-        <Link to="/dashboard" className="text-decoration-none text-muted">Dashboard</Link>
-        <Link to="/jobs" className="text-decoration-none text-muted">Jobs</Link>
-        <Link to="/applications" className="text-decoration-none text-muted">Applications</Link>
-        <Link to="/interview-history" className="text-decoration-none text-muted">History</Link>
-        <Link to="/profile" className="text-decoration-none text-muted">Profile</Link>
+        <Link to="/dashboard" className="text-decoration-none text-muted">
+          Dashboard
+        </Link>
+        <Link to="/resume-builder" className="text-decoration-none text-muted">
+          AI Builder
+        </Link>
+        <Link to="/jobs" className="text-decoration-none text-muted">
+          Jobs
+        </Link>
+        <Link to="/applications" className="text-decoration-none text-muted">
+          Applications
+        </Link>
+        <Link to="/interview-history" className="text-decoration-none text-muted">
+          History
+        </Link>
+        <Link to="/profile" className="text-decoration-none text-muted">
+          Profile
+        </Link>
       </div>
     </div>
   </footer>
@@ -88,6 +102,7 @@ function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/resumes" element={<ResumeManagement />} />
             <Route path="/resume-analyzer" element={<ResumeAnalyzer />} />
+            <Route path="/resume-builder" element={<ResumeBuilder />} />
             <Route path="/jobs" element={<JobDescriptions />} />
             <Route path="/job-descriptions" element={<JobDescriptions />} />
             <Route path="/job-matching" element={<JobMatching />} />
@@ -102,7 +117,7 @@ function App() {
             <Route path="/history" element={<InterviewHistory />} />
           </Route>
 
-          {/* Admin-Only Portal (Dedicated Admin Shell, No Candidate Navbar/Features) */}
+          {/* Admin-Only Portal */}
           <Route
             path="/admin"
             element={
