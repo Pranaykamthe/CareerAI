@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
-import { AuthProvider, useAuth } from './context/AuthContext';
+import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
 
@@ -24,13 +24,16 @@ import MockInterview from './pages/candidate/MockInterview';
 import InterviewReport from './pages/candidate/InterviewReport';
 import InterviewHistory from './pages/candidate/InterviewHistory';
 
+// Admin Pages (Phase 17)
+import AdminDashboard from './pages/admin/AdminDashboard';
+
 // Global Sticky Footer
 const Footer = () => {
   return (
     <footer className="bg-white border-top py-3 mt-auto shadow-sm">
       <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
         <div className="small text-muted">
-          &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
+          © {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
         </div>
         <div className="d-flex gap-3 small">
           <Link to="/dashboard" className="text-decoration-none text-muted">
@@ -63,27 +66,6 @@ const CandidateLayout = () => {
         <Outlet />
       </main>
       <Footer />
-    </div>
-  );
-};
-
-// Admin Dashboard Hub
-const AdminDashboard = () => {
-  const { user, logout } = useAuth();
-
-  return (
-    <div className="min-vh-100 bg-dark text-white py-5">
-      <div className="container">
-        <div className="card shadow-sm p-4 text-center bg-dark text-white border-secondary rounded-3">
-          <h3 className="fw-bold text-info mb-2">Administrator Panel</h3>
-          <p className="text-secondary">Logged in as Super Administrator: {user?.email}</p>
-          <div>
-            <button className="btn btn-outline-light btn-sm" onClick={logout}>
-              <i className="bi bi-box-arrow-right me-1"></i> Logout
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
@@ -122,9 +104,10 @@ function App() {
             <Route path="/interview-report/:sessionId" element={<InterviewReport />} />
             <Route path="/interview-history" element={<InterviewHistory />} />
             <Route path="/interviews/history" element={<InterviewHistory />} />
+            <Route path="/history" element={<InterviewHistory />} />
           </Route>
 
-          {/* Protected Admin Routes */}
+          {/* Protected Admin Routes (Phase 17) */}
           <Route
             path="/admin"
             element={
