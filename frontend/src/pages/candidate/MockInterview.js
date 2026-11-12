@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { Navbar } from '../../components/layout/Navbar';
 import { interviewService } from '../../services/interviewService';
 
 const MockInterview = () => {
@@ -197,7 +196,6 @@ const MockInterview = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <Navbar />
 
       <div className="container py-4">
         {/* Top Header & Metrics Bar */}

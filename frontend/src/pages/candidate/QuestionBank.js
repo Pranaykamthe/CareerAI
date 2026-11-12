@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Navbar } from '../../components/layout/Navbar';
 import { interviewService } from '../../services/interviewService';
 
 const QuestionBank = () => {
@@ -91,7 +90,6 @@ const QuestionBank = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <Navbar />
 
       <div className="container py-4">
         {/* Header Block */}

@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Navbar } from '../../components/layout/Navbar';
 import { resumeService } from '../../services/resumeService';
 import ParsedResumeModal from '../../components/resumes/ParsedResumeModal';
 
@@ -114,7 +113,6 @@ const ResumeManagement = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <Navbar />
 
       <div className="container py-4">
         {/* Title */}

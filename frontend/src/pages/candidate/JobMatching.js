@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Navbar } from '../../components/layout/Navbar';
 import { jobService } from '../../services/jobService';
 import { resumeService } from '../../services/resumeService';
 
@@ -70,7 +69,6 @@ const JobMatching = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <Navbar />
 
       <div className="container py-4">
         {/* Header Breadcrumb & Actions */}

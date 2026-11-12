@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Navbar } from '../../components/layout/Navbar';
 import { interviewService } from '../../services/interviewService';
 
 const InterviewPrep = () => {
@@ -47,7 +46,6 @@ const InterviewPrep = () => {
   return (
     <div className="min-vh-100 bg-light">
       {/* 1. Global Navbar */}
-      <Navbar />
 
       <div className="container-fluid py-4 px-lg-5" style={{ backgroundColor: '#f8fafc' }}>
         {/* Header Banner */}

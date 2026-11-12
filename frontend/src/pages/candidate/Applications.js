@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { applicationService } from '../../services/applicationService';
 import { jobService } from '../../services/jobService';
-import { Navbar } from '../../components/layout/Navbar';
 
 const COLUMNS = [
   { key: 'Saved', label: 'Saved', badgeClass: 'bg-secondary' },
@@ -110,7 +109,6 @@ const Applications = () => {
 
   return (
     <div className="min-vh-100 bg-light">
-      <Navbar />
 
       <div className="container-fluid px-md-5 py-4">
         {/* Header Bar */}
