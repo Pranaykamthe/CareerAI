@@ -23,23 +23,24 @@ ACTION_VERBS = {
     'trained', 'transformed', 'upgraded', 'validated'
 }
 
+
 def analyze_resume_text(raw_text, parsed_data):
     """
     Computes deterministic ATS score and categorized feedback based on:
-    1. Formatting & Readability (20%)
+    1. Formatting & Readability (15%)
     2. Section Completeness (25%)
     3. Keyword & Skill Breadth (25%)
-    4. Action Verbs & Content Quality (15%)
+    4. Action Verbs & Content Quality (20%)
     5. Measurable Impact & Metrics (15%)
     """
     text_lower = raw_text.lower()
     words = re.findall(r'\b[a-zA-Z0-9_\-\.\#\+]+\b', raw_text)
     word_count = len(words)
 
-    # 1. Formatting & Readability (Target: 350 - 1000 words)
+    # 1. Formatting & Readability (Target: 350 - 1200 words)
     formatting_score = 100
     formatting_issues = []
-    
+
     if word_count < 200:
         formatting_score -= 40
         formatting_issues.append("Resume content is too short (under 200 words). Add more details regarding your projects and experience.")
@@ -65,7 +66,7 @@ def analyze_resume_text(raw_text, parsed_data):
     sections_found = parsed_data.get('sections', {})
     section_score = 0
     missing_critical_sections = []
-    
+
     if sections_found.get('summary') or 'summary' in text_lower or 'objective' in text_lower:
         section_score += 20
     else:
@@ -97,7 +98,7 @@ def analyze_resume_text(raw_text, parsed_data):
     # 3. Keyword & Skill Breadth
     extracted_skills = parsed_data.get('skills', [])
     num_skills = len(extracted_skills)
-    
+
     if num_skills >= 12:
         keyword_score = 95
     elif num_skills >= 8:
@@ -124,8 +125,11 @@ def analyze_resume_text(raw_text, parsed_data):
         content_quality_score = 45
 
     # 5. Measurable Impact (Metrics, numbers, dollar signs, percentages)
-    # Matches patterns like 25%, $50K, 10x, 150+ users, 30%
-    metrics_patterns = re.findall(r'(\d+[\%|\+k|m|x]|\$\d+|\d+\s*(?:users|clients|percent|increase|reduction|saved))', raw_text, re.IGNORECASE)
+    metrics_patterns = re.findall(
+        r'(\d+[\%|\+k|m|x]|\$\d+|\d+\s*(?:users|clients|percent|increase|reduction|saved))',
+        raw_text,
+        re.IGNORECASE
+    )
     metrics_count = len(metrics_patterns)
 
     if metrics_count >= 6:
@@ -161,56 +165,56 @@ def analyze_resume_text(raw_text, parsed_data):
     if verb_count >= 6:
         strengths.append(f"Effective use of active verbs ({verb_count} distinct power verbs utilized).")
     if metrics_count >= 3:
-        strengths.append(f"Good quantitative evidence of accomplishment ({metrics_count} measurable achievements found)[cite: 4].")
+        strengths.append(f"Good quantitative evidence of accomplishment ({metrics_count} measurable achievements found).")
     if not strengths:
-        strengths.append("Standard contact and basic structure detected[cite: 4].")
+        strengths.append("Standard contact and basic structure detected.")
 
     # Weaknesses
     if missing_critical_sections:
-        weaknesses.append(f"Missing core section headers: {', '.join(missing_critical_sections)}[cite: 4].")
+        weaknesses.append(f"Missing core section headers: {', '.join(missing_critical_sections)}.")
     if num_skills < 6:
-        weaknesses.append("Low keyword and skill density. Core industry keywords may be filtered out by ATS[cite: 4].")
+        weaknesses.append("Low keyword and skill density. Core industry keywords may be filtered out by ATS.")
     if verb_count < 4:
-        weaknesses.append("Passive wording detected. Insufficient strong action verbs in experience descriptions[cite: 4].")
+        weaknesses.append("Passive wording detected. Insufficient strong action verbs in experience descriptions.")
     if metrics_count < 2:
-        weaknesses.append("Lack of quantifiable metrics (percentages, revenues, scale of users)[cite: 4].")
+        weaknesses.append("Lack of quantifiable metrics (percentages, revenues, scale of users).")
     for issue in formatting_issues:
         weaknesses.append(issue)
 
-    # Actionable Recommendations (Matching UI cards: Summary, Experience, Skills)
+    # Actionable Recommendations
     if missing_critical_sections:
         recommendations.append({
             "category": "Structure",
             "title": "Add Missing Standard Sections",
-            "suggestion": f"Explicitly add labeled sections for: {', '.join(missing_critical_sections)}. ATS crawlers look for exact headings[cite: 4]."
+            "suggestion": f"Explicitly add labeled sections for: {', '.join(missing_critical_sections)}. ATS crawlers look for exact headings."
         })
-    
+
     if metrics_count < 3:
         recommendations.append({
             "category": "Impact",
             "title": "Quantify Your Achievements",
-            "suggestion": "Rewrite experience bullet points using the XYZ formula: 'Accomplished [X], as measured by [Y], by doing [Z]'. Include percentages, dollar savings, or team sizes[cite: 4]."
+            "suggestion": "Rewrite experience bullet points using the XYZ formula: 'Accomplished [X], as measured by [Y], by doing [Z]'. Include percentages, dollar savings, or team sizes."
         })
 
     if verb_count < 6:
         recommendations.append({
             "category": "Content",
             "title": "Incorporate Dynamic Action Verbs",
-            "suggestion": "Begin bullet points with high-impact power verbs such as 'Spearheaded', 'Orchestrated', 'Refactored', or 'Accelerated' rather than 'Responsible for'[cite: 4]."
+            "suggestion": "Begin bullet points with high-impact power verbs such as 'Spearheaded', 'Orchestrated', 'Refactored', or 'Accelerated' rather than 'Responsible for'."
         })
 
     if num_skills < 10:
         recommendations.append({
             "category": "Keywords",
             "title": "Expand Core Technical Skills",
-            "suggestion": "Add relevant tooling, libraries, cloud platforms (e.g., Docker, AWS, PostgreSQL, CI/CD) and soft skills matching your target job descriptions[cite: 4]."
+            "suggestion": "Add relevant tooling, libraries, cloud platforms (e.g., Docker, AWS, PostgreSQL, CI/CD) and soft skills matching your target job descriptions."
         })
 
     if not recommendations:
         recommendations.append({
             "category": "Refinement",
             "title": "Tailor to Specific Role Descriptions",
-            "suggestion": "Align your skills and keywords closely with each specific job posting for maximum ATS match percentage[cite: 4]."
+            "suggestion": "Align your skills and keywords closely with each specific job posting for maximum ATS match percentage."
         })
 
     metrics_summary = {
