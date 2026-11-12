@@ -3,7 +3,6 @@ import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from '
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
-import { Footer } from './components/layout/Footer';
 
 // Auth Pages
 import Login from './pages/auth/Login';
@@ -22,11 +21,43 @@ import QuestionBank from './pages/candidate/QuestionBank';
 import InterviewPrep from './pages/candidate/InterviewPrep';
 import MockInterview from './pages/candidate/MockInterview';
 import InterviewReport from './pages/candidate/InterviewReport';
+import InterviewHistory from './pages/candidate/InterviewHistory';
 
-// Global Layout: Keeps each page content inside flex-grow and renders the sticky Footer at the bottom
+// Global Sticky Footer
+const Footer = () => {
+  return (
+    <footer className="bg-white border-top py-3 mt-auto shadow-sm">
+      <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
+        <div className="small text-muted">
+          &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
+        </div>
+        <div className="d-flex gap-3 small">
+          <Link to="/dashboard" className="text-decoration-none text-muted">
+            Dashboard
+          </Link>
+          <Link to="/jobs" className="text-decoration-none text-muted">
+            Jobs
+          </Link>
+          <Link to="/applications" className="text-decoration-none text-muted">
+            Applications
+          </Link>
+          <Link to="/interview-history" className="text-decoration-none text-muted">
+            History
+          </Link>
+          <Link to="/profile" className="text-decoration-none text-muted">
+            Profile
+          </Link>
+        </div>
+      </div>
+    </footer>
+  );
+};
+
+// Global Layout: Renders persistent Navbar, child route in Outlet, and pinned Footer
 const CandidateLayout = () => {
   return (
     <div className="d-flex flex-column min-vh-100 bg-light">
+      <Navbar />
       <main className="flex-grow-1">
         <Outlet />
       </main>
@@ -35,60 +66,60 @@ const CandidateLayout = () => {
   );
 };
 
-// Candidate Dashboard Hub View
+// Candidate Dashboard Hub View (No local Navbar needed)
 const CandidateDashboard = () => {
   const { user } = useAuth();
 
   return (
-    <div className="min-vh-100 bg-light">
-      <Navbar />
-      <div className="container py-5">
-        <div className="card shadow-sm border-0 p-4 p-md-5 rounded-4 text-center bg-white mb-4">
-          <div
-            className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3 align-items-center justify-content-center"
-            style={{ width: '64px', height: '64px' }}
-          >
-            <i className="bi bi-speedometer2 fs-2"></i>
-          </div>
+    <div className="container py-5">
+      <div className="card shadow-sm border-0 p-4 p-md-5 rounded-4 text-center bg-white mb-4">
+        <div
+          className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3 align-items-center justify-content-center"
+          style={{ width: '64px', height: '64px' }}
+        >
+          <i className="bi bi-speedometer2 fs-2"></i>
+        </div>
 
-          <h2 className="fw-bold text-dark mb-2">
-            Welcome back, {user?.username || 'Candidate'}!
-          </h2>
+        <h2 className="fw-bold text-dark mb-2">
+          Welcome back, {user?.username || 'Candidate'}!
+        </h2>
 
-          <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '650px' }}>
-            Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities,
-            practice curated questions, and run AI mock interview simulations with detailed diagnostic reports.
-          </p>
+        <p className="text-muted small mb-4 mx-auto" style={{ maxWidth: '680px' }}>
+          Manage your candidate profile, optimize your ATS resume score, explore matched job opportunities,
+          practice curated questions, run AI mock interviews, and review your historical performance trends.
+        </p>
 
-          <div className="d-flex flex-wrap justify-content-center gap-2">
-            <Link to="/resumes" className="btn btn-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-cloud-arrow-up"></i> Upload & Manage Resumes
-            </Link>
-            <Link to="/resume-analyzer" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-bar-chart-line"></i> ATS Resume Analyzer
-            </Link>
-            <Link to="/jobs" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-briefcase"></i> Browse Jobs
-            </Link>
-            <Link to="/job-matching" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-bullseye"></i> Job Matches
-            </Link>
-            <Link to="/applications" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-kanban"></i> Applications
-            </Link>
-            <Link to="/question-bank" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-collection-play-fill"></i> Question Bank
-            </Link>
-            <Link to="/interview-prep" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-stars"></i> Interview Prep
-            </Link>
-            <Link to="/mock-interview" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-mic-fill"></i> Mock Interview
-            </Link>
-            <Link to="/profile" className="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
-              <i className="bi bi-person-circle"></i> Edit Profile
-            </Link>
-          </div>
+        <div className="d-flex flex-wrap justify-content-center gap-2">
+          <Link to="/resumes" className="btn btn-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-cloud-arrow-up"></i> Resumes
+          </Link>
+          <Link to="/resume-analyzer" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-bar-chart-line"></i> ATS Analyzer
+          </Link>
+          <Link to="/jobs" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-briefcase"></i> Browse Jobs
+          </Link>
+          <Link to="/job-matching" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-bullseye"></i> Matches
+          </Link>
+          <Link to="/applications" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-kanban"></i> Applications
+          </Link>
+          <Link to="/question-bank" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-collection-play-fill"></i> Question Bank
+          </Link>
+          <Link to="/interview-prep" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-stars"></i> Interview Prep
+          </Link>
+          <Link to="/mock-interview" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-mic-fill"></i> Mock Interview
+          </Link>
+          <Link to="/interview-history" className="btn btn-outline-primary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-clock-history"></i> Interview History
+          </Link>
+          <Link to="/profile" className="btn btn-outline-secondary d-inline-flex align-items-center gap-2">
+            <i className="bi bi-person-circle"></i> Profile
+          </Link>
         </div>
       </div>
     </div>
@@ -127,7 +158,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/admin-login" element={<AdminLogin />} />
 
-          {/* Protected Candidate Routes (Wrapped in CandidateLayout for persistent Footer) */}
+          {/* Protected Candidate Routes wrapped in CandidateLayout */}
           <Route
             element={
               <ProtectedRoute allowedRoles={['candidate', 'admin']}>
@@ -148,6 +179,8 @@ function App() {
             <Route path="/interview-prep" element={<InterviewPrep />} />
             <Route path="/mock-interview" element={<MockInterview />} />
             <Route path="/interview-report/:sessionId" element={<InterviewReport />} />
+            <Route path="/interview-history" element={<InterviewHistory />} />
+            <Route path="/interviews/history" element={<InterviewHistory />} />
           </Route>
 
           {/* Protected Admin Routes */}

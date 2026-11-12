@@ -6,10 +6,11 @@ export const Navbar = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
 
+  // Active border indicator with highlight
   const navItemClass = (path) =>
-    location.pathname === path
+    location.pathname === path || (path !== '/dashboard' && location.pathname.startsWith(path))
       ? 'nav-link px-2 text-nowrap fw-bold text-primary border-bottom border-2 border-primary active'
-      : 'nav-link px-2 text-nowrap text-secondary';
+      : 'nav-link px-2 text-nowrap text-secondary border-bottom border-2 border-transparent';
 
   return (
     <nav
@@ -28,7 +29,7 @@ export const Navbar = () => {
           <i className="bi bi-layers-fill me-2"></i>CareerAI
         </Link>
 
-        {/* Mobile / Responsive Toggler */}
+        {/* Responsive Mobile Hamburger Toggler */}
         <button
           className="navbar-toggler"
           type="button"
@@ -41,7 +42,7 @@ export const Navbar = () => {
           <span className="navbar-toggler-icon"></span>
         </button>
 
-        {/* Navigation Links */}
+        {/* Main Navigation Items */}
         <div className="collapse navbar-collapse" id="careeraiNav">
           <ul className="navbar-nav me-auto mb-2 mb-xl-0 gap-1 small">
             <li className="nav-item">
@@ -89,9 +90,14 @@ export const Navbar = () => {
                 <i className="bi bi-mic-fill me-1"></i> Mock Interview
               </Link>
             </li>
+            <li className="nav-item">
+              <Link className={navItemClass('/interview-history')} to="/interview-history">
+                <i className="bi bi-clock-history me-1"></i> History
+              </Link>
+            </li>
           </ul>
 
-          {/* User Profile Navigation & Logout */}
+          {/* User Profile & Sign Out Controls */}
           <div className="d-flex align-items-center gap-3 ms-xl-2 text-nowrap">
             <Link
               to="/profile"
@@ -100,20 +106,11 @@ export const Navbar = () => {
             >
               <div className="text-end d-none d-sm-block">
                 <div className="small fw-bold text-dark lh-sm">{user?.username || 'Candidate'}</div>
-                <div className="text-muted" style={{ fontSize: '11px' }}>
-                  {user?.email}
-                </div>
+                <div className="text-muted" style={{ fontSize: '11px' }}>{user?.email}</div>
               </div>
               <div
                 className="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold shadow-sm"
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  fontSize: '14px',
-                  transition: 'transform 0.15s ease-in-out',
-                }}
-                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.08)')}
-                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
+                style={{ width: '36px', height: '36px', fontSize: '14px' }}
               >
                 {(user?.username || 'C')[0].toUpperCase()}
               </div>
