@@ -1,3 +1,4 @@
+import json
 from rest_framework import serializers
 from .models import QuestionBank, QuestionBookmark, InterviewSession, InterviewTurn
 
@@ -29,10 +30,11 @@ class QuestionBankSerializer(serializers.ModelSerializer):
 
 class QuestionBookmarkSerializer(serializers.ModelSerializer):
     question = QuestionBankSerializer(read_only=True)
+    question_details = QuestionBankSerializer(source='question', read_only=True)
 
     class Meta:
         model = QuestionBookmark
-        fields = ['id', 'user', 'question', 'created_at']
+        fields = ['id', 'user', 'question', 'question_details', 'created_at']
         read_only_fields = ['id', 'user', 'created_at']
 
 
@@ -63,6 +65,57 @@ class InterviewTurnSerializer(serializers.ModelSerializer):
             'ai_feedback',
             'better_answer',
         ]
+
+
+class InterviewTurnDetailSerializer(serializers.ModelSerializer):
+    turn_index = serializers.IntegerField(source='turn_number', read_only=True)
+    strengths = serializers.SerializerMethodField()
+    weaknesses = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(source='submitted_at', read_only=True)
+
+    class Meta:
+        model = InterviewTurn
+        fields = [
+            'id',
+            'turn_number',
+            'turn_index',
+            'question_text',
+            'category',
+            'candidate_answer',
+            'is_answered',
+            'time_taken_seconds',
+            'ai_score',
+            'ai_feedback',
+            'strengths',
+            'weaknesses',
+            'better_answer',
+            'submitted_at',
+            'created_at',
+        ]
+
+    def get_strengths(self, obj):
+        if hasattr(obj, 'strengths') and isinstance(obj.strengths, list):
+            return obj.strengths
+        if obj.ai_feedback:
+            try:
+                fb = json.loads(obj.ai_feedback) if isinstance(obj.ai_feedback, str) else obj.ai_feedback
+                if isinstance(fb, dict) and isinstance(fb.get('strengths'), list):
+                    return fb['strengths']
+            except Exception:
+                pass
+        return []
+
+    def get_weaknesses(self, obj):
+        if hasattr(obj, 'weaknesses') and isinstance(obj.weaknesses, list):
+            return obj.weaknesses
+        if obj.ai_feedback:
+            try:
+                fb = json.loads(obj.ai_feedback) if isinstance(obj.ai_feedback, str) else obj.ai_feedback
+                if isinstance(fb, dict) and isinstance(fb.get('weaknesses'), list):
+                    return fb['weaknesses']
+            except Exception:
+                pass
+        return []
 
 
 class InterviewSessionSerializer(serializers.ModelSerializer):
@@ -101,6 +154,57 @@ class InterviewSessionSerializer(serializers.ModelSerializer):
 
     def get_turn_count(self, obj):
         return obj.turns.count()
+
+
+class InterviewSessionSummarySerializer(serializers.ModelSerializer):
+    """
+    Phase 15: Lightweight session representation for interview history tables,
+    trend charts, and performance KPI cards.
+    """
+    turns_count = serializers.IntegerField(source='turns.count', read_only=True)
+    completed_turns_count = serializers.SerializerMethodField()
+    performance_tier = serializers.SerializerMethodField()
+    duration_minutes = serializers.SerializerMethodField()
+    session_type = serializers.CharField(source='category', read_only=True)
+
+    class Meta:
+        model = InterviewSession
+        fields = [
+            'id',
+            'role_target',
+            'category',
+            'session_type',
+            'difficulty',
+            'status',
+            'overall_score',
+            'total_questions',
+            'turns_count',
+            'completed_turns_count',
+            'performance_tier',
+            'duration_minutes',
+            'created_at',
+            'completed_at',
+        ]
+        read_only_fields = fields
+
+    def get_completed_turns_count(self, obj):
+        return obj.turns.filter(is_answered=True).count()
+
+    def get_performance_tier(self, obj):
+        score = obj.overall_score or 0
+        if score >= 85:
+            return "Excellent"
+        elif score >= 70:
+            return "Good"
+        elif score >= 50:
+            return "Average"
+        return "Needs Improvement"
+
+    def get_duration_minutes(self, obj):
+        if obj.completed_at and obj.created_at:
+            delta = (obj.completed_at - obj.created_at).total_seconds()
+            return max(1, round(delta / 60))
+        return 1
 
 
 class StartSessionRequestSerializer(serializers.Serializer):
@@ -212,7 +316,6 @@ class InterviewReportSerializer(serializers.ModelSerializer):
         return breakdown
 
     def get_aggregated_strengths(self, obj):
-        import json
         strengths = []
         for turn in obj.turns.all():
             if turn.ai_feedback:
@@ -229,7 +332,6 @@ class InterviewReportSerializer(serializers.ModelSerializer):
         return unique[:6]
 
     def get_aggregated_weaknesses(self, obj):
-        import json
         weaknesses = []
         for turn in obj.turns.all():
             if turn.ai_feedback:

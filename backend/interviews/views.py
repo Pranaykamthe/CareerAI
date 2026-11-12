@@ -1,7 +1,7 @@
 import json
 import random
 from django.utils import timezone
-from django.db.models import Q
+from django.db.models import Avg, Max, Count, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.views import APIView
@@ -12,6 +12,7 @@ from .serializers import (
     QuestionBankSerializer,
     QuestionBookmarkSerializer,
     InterviewSessionSerializer,
+    InterviewSessionSummarySerializer,
     StartSessionRequestSerializer,
     SubmitAnswerRequestSerializer,
     InterviewReportSerializer,
@@ -19,6 +20,10 @@ from .serializers import (
 from .seed_questions import seed_default_questions
 from ai_services.factory import get_ai_service
 
+
+# ============================================================================
+# 1. Question Bank & Bookmarks
+# ============================================================================
 
 class QuestionBankListView(generics.ListAPIView):
     """
@@ -97,10 +102,14 @@ class SeedQuestionsView(APIView):
         return Response({'status': 'success', 'seeded_count': count})
 
 
+# ============================================================================
+# 2. Mock Interview Runtime & Lifecycle
+# ============================================================================
+
 class StartInterviewSessionView(APIView):
     """
     Initializes a new mock interview session and assembles questions matching
-    the target role, format track, and difficulty tier.
+    the target role, track category, and difficulty tier.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -195,10 +204,10 @@ class InterviewSessionDetailView(generics.RetrieveAPIView):
 
 class SubmitAnswerView(APIView):
     """
-    Phase 12: Evaluates the candidate's submitted answer in real time using
-    the modular AI service engine (Groq/Gemini with deterministic fallback).
-    Persists evaluation metrics (score, feedback, model answer) onto InterviewTurn,
-    recalculates session averages, and advances session progression.
+    Evaluates the candidate's submitted answer in real time using the modular
+    AI service engine (Groq/Gemini with deterministic fallback). Persists evaluation
+    metrics (score, feedback, model answer) onto InterviewTurn, recalculates session
+    averages, and advances session progression.
     """
     permission_classes = [permissions.IsAuthenticated]
 
@@ -211,7 +220,6 @@ class SubmitAnswerView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Accept payload from either turn-based or sequential submissions
         turn_id = request.data.get('turn_id')
         candidate_answer = (
             request.data.get('candidate_answer') or request.data.get('answer', '')
@@ -347,6 +355,10 @@ class CancelInterviewSessionView(APIView):
         return Response({'status': 'cancelled', 'message': 'Interview session ended.'})
 
 
+# ============================================================================
+# 3. Phase 14: Post-Interview Diagnostic Performance Report
+# ============================================================================
+
 class InterviewSessionReportView(APIView):
     """
     GET /api/interviews/sessions/<pk>/report/
@@ -356,15 +368,15 @@ class InterviewSessionReportView(APIView):
 
     def get(self, request, pk=None, session_id=None):
         target_id = pk or session_id or self.kwargs.get('pk')
-        
-        # 1. Allow owner access or staff/admin access
+
+        # Allow owner access or staff/admin access
         queryset = InterviewSession.objects.prefetch_related('turns')
         if not (request.user.is_staff or getattr(request.user, 'role', '') == 'admin'):
             queryset = queryset.filter(user=request.user)
 
         session = get_object_or_404(queryset, pk=target_id)
 
-        # 2. Recalculate average score and finalize session status safely
+        # Recalculate average score and finalize session status safely
         try:
             evaluated_turns = session.turns.filter(ai_score__isnull=False)
             if evaluated_turns.exists():
@@ -380,10 +392,103 @@ class InterviewSessionReportView(APIView):
                     update_fields.append('completed_at')
 
                 session.save(update_fields=update_fields)
-        except Exception as e:
-            # Fallback if specific update fields do not exist in schema
+        except Exception:
             session.save()
 
-        # 3. Serialize and return report
         serializer = InterviewReportSerializer(session, context={'request': request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+# ============================================================================
+# 4. Phase 15: Interview History, Aggregated Trends & Session Archiving
+# ============================================================================
+
+class InterviewHistoryListView(generics.ListAPIView):
+    """
+    GET /api/interviews/history/
+    Lists past interview sessions for the authenticated candidate.
+    Supports filtering by track category, completion status, and keyword search.
+    """
+    serializer_class = InterviewSessionSummarySerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        queryset = InterviewSession.objects.filter(user=user).order_by('-created_at')
+
+        # Filter by category / session_type (Technical, HR, Behavioral, Mixed)
+        session_type = self.request.query_params.get('type')
+        if session_type and session_type != 'All':
+            if hasattr(InterviewSession, 'category'):
+                queryset = queryset.filter(category__iexact=session_type)
+            elif hasattr(InterviewSession, 'session_type'):
+                queryset = queryset.filter(session_type__iexact=session_type)
+
+        # Filter by status (Completed, In Progress)
+        status_param = self.request.query_params.get('status')
+        if status_param and status_param != 'All':
+            queryset = queryset.filter(status__iexact=status_param)
+
+        # Keyword search across role_target and category
+        search = self.request.query_params.get('search')
+        if search:
+            if hasattr(InterviewSession, 'category'):
+                queryset = queryset.filter(
+                    Q(role_target__icontains=search) | Q(category__icontains=search)
+                )
+            else:
+                queryset = queryset.filter(
+                    Q(role_target__icontains=search) | Q(session_type__icontains=search)
+                )
+
+        return queryset
+
+
+class InterviewHistoryStatsView(APIView):
+    """
+    GET /api/interviews/history/stats/
+    Returns aggregated KPI metrics and recent score progression for the candidate.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        user_sessions = InterviewSession.objects.filter(user=user)
+
+        total_sessions = user_sessions.count()
+        completed_sessions = user_sessions.filter(status__iexact='completed')
+
+        completed_count = completed_sessions.count()
+        avg_score = completed_sessions.aggregate(Avg('overall_score'))['overall_score__avg'] or 0
+        best_score = completed_sessions.aggregate(Max('overall_score'))['overall_score__max'] or 0
+
+        # Recent trend (last 5 completed scores in chronological order)
+        trend_fields = ['id', 'role_target', 'overall_score', 'created_at']
+        if hasattr(InterviewSession, 'category'):
+            trend_fields.append('category')
+        if hasattr(InterviewSession, 'session_type'):
+            trend_fields.append('session_type')
+
+        recent_trends = list(
+            completed_sessions.order_by('created_at').values(*trend_fields)[:5]
+        )
+
+        return Response({
+            "total_sessions": total_sessions,
+            "completed_sessions": completed_count,
+            "in_progress_sessions": total_sessions - completed_count,
+            "average_score": round(float(avg_score), 1),
+            "highest_score": float(best_score) if best_score is not None else 0,
+            "recent_trends": recent_trends,
+        }, status=status.HTTP_200_OK)
+
+
+class InterviewSessionDeleteView(generics.DestroyAPIView):
+    """
+    DELETE /api/interviews/sessions/<pk>/delete/
+    Deletes an archived interview session and cascades deletion of its associated turns.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return InterviewSession.objects.filter(user=self.request.user)
