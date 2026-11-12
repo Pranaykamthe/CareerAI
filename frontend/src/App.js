@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
-import { AuthProvider } from './context/AuthContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
 
@@ -24,50 +24,45 @@ import MockInterview from './pages/candidate/MockInterview';
 import InterviewReport from './pages/candidate/InterviewReport';
 import InterviewHistory from './pages/candidate/InterviewHistory';
 
-// Admin Pages (Phase 17)
+// Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 
-// Global Sticky Footer
-const Footer = () => {
-  return (
-    <footer className="bg-white border-top py-3 mt-auto shadow-sm">
-      <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
-        <div className="small text-muted">
-          © {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
-        </div>
-        <div className="d-flex gap-3 small">
-          <Link to="/dashboard" className="text-decoration-none text-muted">
-            Dashboard
-          </Link>
-          <Link to="/jobs" className="text-decoration-none text-muted">
-            Jobs
-          </Link>
-          <Link to="/applications" className="text-decoration-none text-muted">
-            Applications
-          </Link>
-          <Link to="/interview-history" className="text-decoration-none text-muted">
-            History
-          </Link>
-          <Link to="/profile" className="text-decoration-none text-muted">
-            Profile
-          </Link>
-        </div>
+// Candidate-Only Footer
+const CandidateFooter = () => (
+  <footer className="bg-white border-top py-3 mt-auto shadow-sm">
+    <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
+      <div className="small text-muted">
+        &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
       </div>
-    </footer>
-  );
-};
-
-// Global Layout: Renders persistent Navbar, child route in Outlet, and pinned Footer
-const CandidateLayout = () => {
-  return (
-    <div className="d-flex flex-column min-vh-100 bg-light">
-      <Navbar />
-      <main className="flex-grow-1">
-        <Outlet />
-      </main>
-      <Footer />
+      <div className="d-flex gap-3 small">
+        <Link to="/dashboard" className="text-decoration-none text-muted">Dashboard</Link>
+        <Link to="/jobs" className="text-decoration-none text-muted">Jobs</Link>
+        <Link to="/applications" className="text-decoration-none text-muted">Applications</Link>
+        <Link to="/interview-history" className="text-decoration-none text-muted">History</Link>
+        <Link to="/profile" className="text-decoration-none text-muted">Profile</Link>
+      </div>
     </div>
-  );
+  </footer>
+);
+
+// Candidate-Only Layout
+const CandidateLayout = () => (
+  <div className="d-flex flex-column min-vh-100 bg-light">
+    <Navbar />
+    <main className="flex-grow-1">
+      <Outlet />
+    </main>
+    <CandidateFooter />
+  </div>
+);
+
+// Role-Aware Root Redirect
+const RootRedirect = () => {
+  const { user } = useAuth();
+  if (user?.role === 'admin') {
+    return <Navigate to="/admin" replace />;
+  }
+  return <Navigate to="/dashboard" replace />;
 };
 
 function App() {
@@ -81,10 +76,10 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/admin-login" element={<AdminLogin />} />
 
-          {/* Protected Candidate Routes wrapped in CandidateLayout */}
+          {/* Candidate-Only Routes */}
           <Route
             element={
-              <ProtectedRoute allowedRoles={['candidate', 'admin']}>
+              <ProtectedRoute allowedRoles={['candidate']}>
                 <CandidateLayout />
               </ProtectedRoute>
             }
@@ -107,7 +102,7 @@ function App() {
             <Route path="/history" element={<InterviewHistory />} />
           </Route>
 
-          {/* Protected Admin Routes (Phase 17) */}
+          {/* Admin-Only Portal (Dedicated Admin Shell, No Candidate Navbar/Features) */}
           <Route
             path="/admin"
             element={
@@ -118,7 +113,7 @@ function App() {
           />
 
           {/* Fallback Redirects */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/" element={<RootRedirect />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>
