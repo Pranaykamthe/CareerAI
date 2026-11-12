@@ -1,21 +1,34 @@
-from django.db.models import Avg, Count
-from rest_framework.views import APIView
+from django.contrib.auth import get_user_model
+from django.db import connection
+from django.db.models import Avg, Count, Q
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import generics, permissions, status
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.views import APIView
 
 from accounts.models import Profile
-from resumes.models import Resume, ResumeAnalysis
-from jobs.models import Job, JobMatch
 from applications.models import JobApplication
-from interviews.models import InterviewSession
+from interviews.models import InterviewSession, QuestionBank
+from jobs.models import Job, JobMatch
+from resumes.models import Resume, ResumeAnalysis
 
+from .permissions import IsAdminRole
+from .serializers import AdminUserSerializer
+
+User = get_user_model()
+
+
+# ==============================================================================
+# PHASE 16: CANDIDATE DASHBOARD ANALYTICS
+# ==============================================================================
 
 class CandidateDashboardView(APIView):
     """
     GET /api/dashboard/candidate/
     Aggregates cross-module career readiness metrics for the logged-in candidate.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
         user = request.user
@@ -26,7 +39,7 @@ class CandidateDashboardView(APIView):
         profile_skills = getattr(profile, 'skills_list', None) or getattr(profile, 'skills', None) or []
         target_role = getattr(profile, 'target_role', '') or 'Software Developer'
 
-        # 2. Resume & Latest ATS Score (aligned with Resume & ResumeAnalysis models)
+        # 2. Resume & Latest ATS Score
         resumes = Resume.objects.filter(user=user).order_by('-is_primary', '-uploaded_at')
         total_resumes = resumes.count()
         primary_resume = resumes.first()
@@ -88,12 +101,12 @@ class CandidateDashboardView(APIView):
                 'title': match.job.title,
                 'company': match.job.company,
                 'location': match.job.location,
-                'match_score': round(match.match_score or 0),
+                'match_score': round(float(match.match_score or 0)),
                 'matched_skills': (match.matched_skills or [])[:4],
                 'missing_skills': missing[:3],
             })
 
-        # Fallback to latest jobs if no JobMatch records exist yet
+        # Fallback to active jobs if no JobMatch records exist yet
         if not top_matches:
             for job in Job.objects.filter(is_active=True).order_by('-id')[:4]:
                 req_skills = job.required_skills or []
@@ -130,8 +143,12 @@ class CandidateDashboardView(APIView):
             'Rejected': 0,
         }
         for row in status_counts_raw:
-            if row['status'] in status_map:
-                status_map[row['status']] = row['count']
+            matched_key = next(
+                (k for k in status_map if k.lower() == str(row['status']).lower()),
+                None
+            )
+            if matched_key:
+                status_map[matched_key] = row['count']
 
         total_applications = applications.count()
         saved_jobs_count = status_map['Saved']
@@ -143,7 +160,7 @@ class CandidateDashboardView(APIView):
         completed_interviews_count = completed_sessions.count()
 
         avg_interview_score = round(
-            completed_sessions.aggregate(avg=Avg('overall_score'))['avg'] or 0
+            float(completed_sessions.aggregate(avg=Avg('overall_score'))['avg'] or 0)
         )
 
         recent_sessions_trend = []
@@ -175,7 +192,7 @@ class CandidateDashboardView(APIView):
             ],
             'values': [
                 profile_completion,
-                latest_ats_score,
+                round(float(latest_ats_score)),
                 skill_coverage_score,
                 job_fit_avg,
                 avg_interview_score,
@@ -226,7 +243,7 @@ class CandidateDashboardView(APIView):
                 'skills_count': len(combined_skills),
             },
             'kpis': {
-                'ats_score': latest_ats_score,
+                'ats_score': round(float(latest_ats_score)),
                 'total_resumes': total_resumes,
                 'job_matches_count': matches_qs.count() or len(top_matches),
                 'avg_job_fit': job_fit_avg,
@@ -245,3 +262,240 @@ class CandidateDashboardView(APIView):
             'radar_metrics': radar_metrics,
             'recent_activities': activities[:5],
         })
+
+
+# ==============================================================================
+# PHASE 17: ADMINISTRATOR DASHBOARD & PLATFORM MANAGEMENT
+# ==============================================================================
+
+class AdminOverviewView(APIView):
+    """
+    Returns platform-wide KPIs, role distributions, recent registrations,
+    and system health diagnostics for administrators.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        total_users = User.objects.count()
+        active_users = User.objects.filter(is_active=True).count()
+        admin_users = User.objects.filter(Q(role='admin') | Q(is_superuser=True)).count()
+        candidate_users = total_users - admin_users
+
+        total_resumes = Resume.objects.count()
+        total_jobs = Job.objects.count()
+        active_jobs = Job.objects.filter(is_active=True).count()
+        total_applications = JobApplication.objects.count()
+        total_interviews = InterviewSession.objects.count()
+        completed_interviews = InterviewSession.objects.filter(status__iexact='completed').count()
+        avg_platform_interview_score = (
+            InterviewSession.objects.filter(status__iexact='completed').aggregate(avg=Avg('overall_score'))['avg'] or 0
+        )
+        total_questions = QuestionBank.objects.count()
+
+        db_status = 'healthy'
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute('SELECT 1')
+        except Exception:
+            db_status = 'degraded'
+
+        recent_users = AdminUserSerializer(
+            User.objects.order_by('-date_joined')[:5],
+            many=True
+        ).data
+
+        return Response({
+            'metrics': {
+                'total_users': total_users,
+                'active_users': active_users,
+                'candidate_users': candidate_users,
+                'admin_users': admin_users,
+                'total_resumes': total_resumes,
+                'total_jobs': total_jobs,
+                'active_jobs': active_jobs,
+                'total_applications': total_applications,
+                'total_interviews': total_interviews,
+                'completed_interviews': completed_interviews,
+                'avg_interview_score': round(float(avg_platform_interview_score), 1),
+                'total_questions': total_questions,
+            },
+            'system_health': {
+                'api_status': 'operational',
+                'database_status': db_status,
+                'server_time': timezone.now(),
+            },
+            'recent_users': recent_users,
+        })
+
+
+class AdminUserListView(generics.ListAPIView):
+    """
+    Lists all registered users with optional search and role/status filtering.
+    """
+    serializer_class = AdminUserSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get_queryset(self):
+        queryset = User.objects.all().order_by('-date_joined')
+        search = self.request.query_params.get('search')
+        role = self.request.query_params.get('role')
+        is_active = self.request.query_params.get('is_active')
+
+        if search:
+            queryset = queryset.filter(
+                Q(email__icontains=search) |
+                Q(username__icontains=search) |
+                Q(first_name__icontains=search) |
+                Q(last_name__icontains=search)
+            )
+        if role and role != 'all':
+            queryset = queryset.filter(role=role)
+        if is_active in ['true', 'false']:
+            queryset = queryset.filter(is_active=(is_active == 'true'))
+
+        return queryset
+
+
+class AdminUserDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Allows administrators to update a user's role or active status, or delete a user.
+    """
+    queryset = User.objects.all()
+    serializer_class = AdminUserSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def perform_destroy(self, instance):
+        if instance == self.request.user:
+            raise permissions.PermissionDenied("You cannot delete your own administrator account.")
+        instance.delete()
+
+
+class AdminJobManageView(APIView):
+    """
+    Lists all jobs or creates a new job listing from the Admin Portal.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        jobs = Job.objects.all().order_by('-created_at')
+        data = [
+            {
+                'id': job.id,
+                'title': job.title,
+                'company': job.company,
+                'location': job.location,
+                'job_type': job.job_type,
+                'experience_level': job.experience_level,
+                'salary_range': job.salary_range,
+                'required_skills': job.required_skills,
+                'description': job.description,
+                'is_active': job.is_active,
+                'created_at': job.created_at,
+            }
+            for job in jobs
+        ]
+        return Response(data)
+
+    def post(self, request):
+        data = request.data
+        job = Job.objects.create(
+            created_by=request.user,
+            title=data.get('title', 'Untitled Role'),
+            company=data.get('company', 'CareerAI Partner'),
+            location=data.get('location', 'Remote'),
+            job_type=data.get('job_type', 'Full-time'),
+            experience_level=data.get('experience_level', 'Mid Level'),
+            salary_range=data.get('salary_range', ''),
+            required_skills=data.get('required_skills', []),
+            description=data.get('description', ''),
+            is_active=data.get('is_active', True),
+        )
+        return Response({'id': job.id, 'title': job.title, 'message': 'Job created.'}, status=status.HTTP_201_CREATED)
+
+
+class AdminJobDetailView(APIView):
+    """
+    Updates or deletes a specific job listing.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def patch(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        updatable_fields = [
+            'title', 'company', 'location', 'job_type',
+            'experience_level', 'salary_range', 'required_skills',
+            'description', 'is_active'
+        ]
+        for field in updatable_fields:
+            if field in request.data and hasattr(job, field):
+                setattr(job, field, request.data[field])
+        job.save()
+        return Response({'id': job.id, 'title': job.title, 'is_active': job.is_active})
+
+    def delete(self, request, pk):
+        job = get_object_or_404(Job, pk=pk)
+        job.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AdminQuestionManageView(APIView):
+    """
+    Lists all interview questions or adds a new curated question to the Question Bank.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        questions = QuestionBank.objects.all().order_by('-id')
+        data = [
+            {
+                'id': q.id,
+                'question_text': q.question_text,
+                'category': q.category,
+                'difficulty': q.difficulty,
+                'role_target': q.role_target,
+                'ideal_points': q.ideal_points,
+                'sample_answer': q.sample_answer,
+                'is_active': q.is_active,
+            }
+            for q in questions
+        ]
+        return Response(data)
+
+    def post(self, request):
+        data = request.data
+        question = QuestionBank.objects.create(
+            question_text=data.get('question_text', ''),
+            category=data.get('category', 'Technical'),
+            difficulty=data.get('difficulty', 'Medium'),
+            role_target=data.get('role_target', 'General Software Engineer'),
+            ideal_points=data.get('ideal_points', data.get('talking_points', [])),
+            sample_answer=data.get('sample_answer', ''),
+            is_active=data.get('is_active', True),
+        )
+        return Response({'id': question.id, 'message': 'Question added.'}, status=status.HTTP_201_CREATED)
+
+
+class AdminQuestionDetailView(APIView):
+    """
+    Updates or deletes a specific question bank item.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def patch(self, request, pk):
+        question = get_object_or_404(QuestionBank, pk=pk)
+        updatable_fields = [
+            'question_text', 'category', 'difficulty',
+            'role_target', 'ideal_points', 'sample_answer', 'is_active'
+        ]
+        for field in updatable_fields:
+            if field in request.data and hasattr(question, field):
+                setattr(question, field, request.data[field])
+        if 'talking_points' in request.data:
+            question.ideal_points = request.data['talking_points']
+        question.save()
+        return Response({'id': question.id, 'is_active': question.is_active})
+
+    def delete(self, request, pk):
+        question = get_object_or_404(QuestionBank, pk=pk)
+        question.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
