@@ -113,15 +113,40 @@ const Register = () => {
 
   if (isSuccess) {
     return (
-      <div className="container min-vh-100 d-flex align-items-center justify-content-center">
-        <div className="card shadow-sm border-0 p-5 text-center" style={{ maxWidth: '480px', borderRadius: '16px' }}>
-          <div className="mx-auto mb-4 d-flex align-items-center justify-content-center rounded-circle" style={{ width: '72px', height: '72px', backgroundColor: '#ECFDF5', color: '#10B981' }}>
+      <div
+        className="container-fluid min-vh-100 d-flex align-items-center justify-content-center p-4"
+        style={{ backgroundColor: '#F8FAFC' }}
+      >
+        <div
+          className="card bg-white shadow-sm p-5 text-center"
+          style={{
+            maxWidth: '460px',
+            width: '100%',
+            borderRadius: '16px',
+            border: '1px solid #E2E8F0',
+          }}
+        >
+          <div
+            className="mx-auto mb-4 d-flex align-items-center justify-content-center rounded-circle"
+            style={{
+              width: '72px',
+              height: '72px',
+              backgroundColor: '#ECFDF5',
+              color: '#10B981',
+            }}
+          >
             <i className="bi bi-check-lg fs-1"></i>
           </div>
-          <h3 className="fw-bold mb-2">Account Created!</h3>
-          <p className="text-muted mb-4">Welcome to CareerAI. Your account has been created successfully.</p>
-          <button className="btn btn-primary-custom w-100 py-2" onClick={() => navigate('/login')}>
-            Go to Login
+          <h3 className="fw-bold text-dark mb-2">Account Created!</h3>
+          <p className="text-muted small mb-4">
+            Welcome to CareerAI. Your candidate profile is ready—sign in to upload your resume and start practicing.
+          </p>
+          <button
+            className="btn w-100 py-2 fw-semibold text-white d-flex align-items-center justify-content-center gap-2"
+            style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
+            onClick={() => navigate('/login')}
+          >
+            <i className="bi bi-box-arrow-in-right"></i> Go to Candidate Login
           </button>
         </div>
       </div>
@@ -129,153 +154,329 @@ const Register = () => {
   }
 
   return (
-    <div className="container-fluid min-vh-100 d-flex p-0">
+    <div
+      className="container-fluid min-vh-100 d-flex p-0"
+      style={{ backgroundColor: '#F8FAFC' }}
+    >
       <div className="row g-0 flex-grow-1">
-        {/* Left Hero Banner */}
-        <div className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5" style={{ backgroundColor: '#F8FAFC', borderRight: '1px solid #E2E8F0' }}>
-          <div className="d-flex align-items-center">
-            <span className="fs-3 fw-bold text-primary">
-              <i className="bi bi-layers-fill me-2"></i>CareerAI
-            </span>
+        {/* Left Side: Dark Hero Brand Panel (Matches Login & Admin Portal) */}
+        <div
+          className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5 text-white"
+          style={{
+            background: 'radial-gradient(circle at 30% 30%, #1E1B4B 0%, #0B0F19 100%)',
+            borderRight: '1px solid #1E293B',
+          }}
+        >
+          {/* Brand Logo */}
+          <div>
+            <Link
+              to="/"
+              className="text-decoration-none fs-3 fw-bold text-white d-inline-flex align-items-center"
+            >
+              <i className="bi bi-layers-fill me-2" style={{ color: '#6366F1' }}></i>
+              CareerAI
+            </Link>
           </div>
 
+          {/* Center Hero Copy */}
           <div className="my-auto py-5">
-            <h1 className="display-6 fw-bold text-dark mb-3">
-              Join CareerAI and <br />
-              <span className="text-primary">Accelerate Your Career</span>
+            <h1 className="display-6 fw-bold mb-3 text-white">
+              Accelerate Your Career with{' '}
+              <span style={{ color: '#6366F1' }}>CareerAI</span>
             </h1>
-            <p className="text-muted mb-4 lead fs-6">
-              Create your account and unlock the power of AI to land your dream job.
+            <div
+              className="mb-4"
+              style={{
+                width: '48px',
+                height: '3px',
+                backgroundColor: '#4F46E5',
+                borderRadius: '2px',
+              }}
+            ></div>
+            <h5 className="fw-semibold text-white mb-2">
+              Your Intelligent Job & Interview Copilot
+            </h5>
+            <p
+              className="text-secondary lead fs-6 mb-5"
+              style={{ maxWidth: '420px' }}
+            >
+              Create your free candidate account to benchmark your resume against ATS filters, uncover high-fit roles, and practice interviews with instant AI feedback.
             </p>
 
-            <div className="d-flex flex-column gap-3">
+            {/* Stacked Feature Highlights */}
+            <div className="d-flex flex-column gap-3 pt-3 border-top border-secondary border-opacity-25">
               <div className="d-flex align-items-start gap-3">
-                <div className="rounded p-2" style={{ backgroundColor: '#EFF6FF', color: '#2563EB' }}>
-                  <i className="bi bi-file-earmark-person fs-5"></i>
+                <div
+                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818CF8',
+                  }}
+                >
+                  <i className="bi bi-file-earmark-check fs-5"></i>
                 </div>
                 <div>
-                  <h6 className="mb-0 fw-semibold">AI Resume Analysis</h6>
-                  <small className="text-muted">Get in-depth insights and improve your resume with AI.</small>
+                  <div className="fw-semibold text-white small">ATS Resume Scoring</div>
+                  <small className="text-secondary">
+                    Instant keyword gap detection and bullet-point optimization.
+                  </small>
                 </div>
               </div>
 
               <div className="d-flex align-items-start gap-3">
-                <div className="rounded p-2" style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}>
-                  <i className="bi bi-briefcase fs-5"></i>
+                <div
+                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818CF8',
+                  }}
+                >
+                  <i className="bi bi-bullseye fs-5"></i>
                 </div>
                 <div>
-                  <h6 className="mb-0 fw-semibold">Job Matching</h6>
-                  <small className="text-muted">Find the best job opportunities that match your skills.</small>
+                  <div className="fw-semibold text-white small">Smart Job Matching</div>
+                  <small className="text-secondary">
+                    Ranked job opportunities aligned to your skills and experience.
+                  </small>
                 </div>
               </div>
 
               <div className="d-flex align-items-start gap-3">
-                <div className="rounded p-2" style={{ backgroundColor: '#FAF5FF', color: '#7C3AED' }}>
-                  <i className="bi bi-chat-quote fs-5"></i>
+                <div
+                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
+                  style={{
+                    width: '38px',
+                    height: '38px',
+                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818CF8',
+                  }}
+                >
+                  <i className="bi bi-mic fs-5"></i>
                 </div>
                 <div>
-                  <h6 className="mb-0 fw-semibold">AI Interview Preparation</h6>
-                  <small className="text-muted">Practice with AI-powered mock interviews and feedback.</small>
+                  <div className="fw-semibold text-white small">AI Mock Interviews</div>
+                  <small className="text-secondary">
+                    Role-specific technical and behavioral coaching sessions.
+                  </small>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="text-muted small">
-            © 2026 CareerAI. All rights reserved.
+          {/* Copyright */}
+          <div className="text-secondary small">
+            © {new Date().getFullYear()} CareerAI. All rights reserved.
           </div>
         </div>
 
-        {/* Right Form Container */}
-        <div className="col-lg-7 d-flex align-items-center justify-content-center p-4 p-md-5">
-          <div style={{ maxWidth: '480px', width: '100%' }}>
-            <div className="text-center text-lg-start mb-4">
-              <h2 className="fw-bold mb-1">Create your account</h2>
-              <p className="text-muted small">Fill in the details below to get started</p>
+        {/* Right Side: Centered Registration Card */}
+        <div className="col-lg-7 d-flex flex-column align-items-center justify-content-center p-4 py-5">
+          <div
+            className="card bg-white p-4 p-md-5 shadow-sm"
+            style={{
+              maxWidth: '480px',
+              width: '100%',
+              borderRadius: '16px',
+              border: '1px solid #E2E8F0',
+            }}
+          >
+            {/* Card Header */}
+            <div className="text-center mb-4">
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  backgroundColor: '#EEF2FF',
+                  color: '#4F46E5',
+                }}
+              >
+                <i className="bi bi-person-plus fs-3"></i>
+              </div>
+              <h3 className="fw-bold text-dark mb-1">Create Your Account</h3>
+              <p className="text-muted small mb-0">
+                Start your CareerAI candidate workspace in seconds
+              </p>
             </div>
 
             {errors.general && (
-              <div className="alert alert-danger py-2 small">{errors.general}</div>
+              <div
+                className="alert alert-danger py-2 small d-flex align-items-center"
+                role="alert"
+              >
+                <i className="bi bi-exclamation-circle-fill me-2"></i>
+                <div>{errors.general}</div>
+              </div>
             )}
 
             <form onSubmit={handleSubmit} noValidate>
               {/* Full Name */}
               <div className="mb-3">
-                <label className="form-label small fw-medium">Full Name</label>
-                <input
-                  type="text"
-                  name="username"
-                  className={`form-control ${errors.username ? 'is-invalid' : ''}`}
-                  placeholder="e.g. John Doe"
-                  value={formData.username}
-                  onChange={handleChange}
-                />
-                {errors.username && <div className="invalid-feedback">{errors.username}</div>}
+                <label className="form-label small fw-semibold text-dark">
+                  Full Name
+                </label>
+                <div className="input-group">
+                  <span className="input-group-text bg-white border-end-0 text-muted">
+                    <i className="bi bi-person"></i>
+                  </span>
+                  <input
+                    type="text"
+                    name="username"
+                    className={`form-control border-start-0 ps-0 ${
+                      errors.username ? 'is-invalid' : ''
+                    }`}
+                    placeholder="John Doe"
+                    value={formData.username}
+                    onChange={handleChange}
+                  />
+                </div>
+                {errors.username && (
+                  <div className="text-danger small mt-1">{errors.username}</div>
+                )}
               </div>
 
               {/* Email Address */}
               <div className="mb-3">
-                <label className="form-label small fw-medium">Email address</label>
-                <input
-                  type="email"
-                  name="email"
-                  className={`form-control ${errors.email ? 'is-invalid' : ''}`}
-                  placeholder="john.doe@example.com"
-                  value={formData.email}
-                  onChange={handleChange}
-                />
-                {errors.email && <div className="invalid-feedback">{errors.email}</div>}
+                <label className="form-label small fw-semibold text-dark">
+                  Email Address
+                </label>
+                <div className="input-group">
+                  <span className="input-group-text bg-white border-end-0 text-muted">
+                    <i className="bi bi-envelope"></i>
+                  </span>
+                  <input
+                    type="email"
+                    name="email"
+                    className={`form-control border-start-0 ps-0 ${
+                      errors.email ? 'is-invalid' : ''
+                    }`}
+                    placeholder="john.doe@example.com"
+                    value={formData.email}
+                    onChange={handleChange}
+                  />
+                </div>
+                {errors.email && (
+                  <div className="text-danger small mt-1">{errors.email}</div>
+                )}
               </div>
 
               {/* Password */}
               <div className="mb-2">
-                <label className="form-label small fw-medium">Password</label>
+                <label className="form-label small fw-semibold text-dark">
+                  Password
+                </label>
                 <div className="input-group">
+                  <span className="input-group-text bg-white border-end-0 text-muted">
+                    <i className="bi bi-lock"></i>
+                  </span>
                   <input
                     type={showPassword ? 'text' : 'password'}
                     name="password"
-                    className={`form-control ${errors.password ? 'is-invalid' : ''}`}
-                    placeholder="Enter strong password"
+                    className={`form-control border-start-0 border-end-0 ps-0 ${
+                      errors.password ? 'is-invalid' : ''
+                    }`}
+                    placeholder="Create a strong password"
                     value={formData.password}
                     onChange={handleChange}
                   />
                   <button
                     type="button"
-                    className="btn btn-outline-secondary"
+                    className="input-group-text bg-white border-start-0 text-muted"
                     onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
                   </button>
-                  {errors.password && <div className="invalid-feedback d-block">{errors.password}</div>}
                 </div>
+                {errors.password && (
+                  <div className="text-danger small mt-1">{errors.password}</div>
+                )}
               </div>
 
               {/* Password Strength Indicator */}
               {formData.password && (
-                <div className="mb-3">
+                <div
+                  className="p-2.5 rounded-3 mb-3 p-2"
+                  style={{
+                    backgroundColor: '#F8FAFC',
+                    border: '1px solid #E2E8F0',
+                  }}
+                >
                   <div className="d-flex justify-content-between align-items-center mb-1">
                     <span className="small text-muted">Password strength:</span>
-                    <span className="small fw-semibold" style={{ color: strength.color }}>{strength.label}</span>
+                    <span
+                      className="small fw-semibold"
+                      style={{ color: strength.color }}
+                    >
+                      {strength.label}
+                    </span>
                   </div>
                   <div className="progress" style={{ height: '5px' }}>
                     <div
                       className="progress-bar"
                       role="progressbar"
-                      style={{ width: strength.width, backgroundColor: strength.color }}
+                      style={{
+                        width: strength.width,
+                        backgroundColor: strength.color,
+                      }}
                     ></div>
                   </div>
-                  <div className="row g-1 mt-2 text-muted" style={{ fontSize: '11px' }}>
-                    <div className={`col-6 ${hasMinLength ? 'text-success fw-medium' : ''}`}>
-                      <i className={`bi ${hasMinLength ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i> Min 8 characters
+                  <div
+                    className="row g-1 mt-2 text-muted"
+                    style={{ fontSize: '11px' }}
+                  >
+                    <div
+                      className={`col-6 ${
+                        hasMinLength ? 'text-success fw-medium' : ''
+                      }`}
+                    >
+                      <i
+                        className={`bi ${
+                          hasMinLength ? 'bi-check-circle-fill' : 'bi-circle'
+                        } me-1`}
+                      ></i>
+                      Min 8 characters
                     </div>
-                    <div className={`col-6 ${hasUppercase ? 'text-success fw-medium' : ''}`}>
-                      <i className={`bi ${hasUppercase ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i> One uppercase
+                    <div
+                      className={`col-6 ${
+                        hasUppercase ? 'text-success fw-medium' : ''
+                      }`}
+                    >
+                      <i
+                        className={`bi ${
+                          hasUppercase ? 'bi-check-circle-fill' : 'bi-circle'
+                        } me-1`}
+                      ></i>
+                      One uppercase
                     </div>
-                    <div className={`col-6 ${hasNumber ? 'text-success fw-medium' : ''}`}>
-                      <i className={`bi ${hasNumber ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i> One number
+                    <div
+                      className={`col-6 ${
+                        hasNumber ? 'text-success fw-medium' : ''
+                      }`}
+                    >
+                      <i
+                        className={`bi ${
+                          hasNumber ? 'bi-check-circle-fill' : 'bi-circle'
+                        } me-1`}
+                      ></i>
+                      One number
                     </div>
-                    <div className={`col-6 ${hasSpecial ? 'text-success fw-medium' : ''}`}>
-                      <i className={`bi ${hasSpecial ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i> One special symbol
+                    <div
+                      className={`col-6 ${
+                        hasSpecial ? 'text-success fw-medium' : ''
+                      }`}
+                    >
+                      <i
+                        className={`bi ${
+                          hasSpecial ? 'bi-check-circle-fill' : 'bi-circle'
+                        } me-1`}
+                      ></i>
+                      One special symbol
                     </div>
                   </div>
                 </div>
@@ -283,63 +484,123 @@ const Register = () => {
 
               {/* Confirm Password */}
               <div className="mb-3">
-                <label className="form-label small fw-medium">Confirm Password</label>
+                <label className="form-label small fw-semibold text-dark">
+                  Confirm Password
+                </label>
                 <div className="input-group">
+                  <span className="input-group-text bg-white border-end-0 text-muted">
+                    <i className="bi bi-shield-check"></i>
+                  </span>
                   <input
                     type={showConfirmPassword ? 'text' : 'password'}
                     name="confirm_password"
-                    className={`form-control ${errors.confirm_password ? 'is-invalid' : ''}`}
-                    placeholder="Repeat password"
+                    className={`form-control border-start-0 border-end-0 ps-0 ${
+                      errors.confirm_password ? 'is-invalid' : ''
+                    }`}
+                    placeholder="Repeat your password"
                     value={formData.confirm_password}
                     onChange={handleChange}
                   />
                   <button
                     type="button"
-                    className="btn btn-outline-secondary"
+                    className="input-group-text bg-white border-start-0 text-muted"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    tabIndex="-1"
+                    aria-label={
+                      showConfirmPassword ? 'Hide password' : 'Show password'
+                    }
                   >
-                    <i className={`bi ${showConfirmPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                    <i
+                      className={`bi ${
+                        showConfirmPassword ? 'bi-eye-slash' : 'bi-eye'
+                      }`}
+                    ></i>
                   </button>
-                  {errors.confirm_password && <div className="invalid-feedback d-block">{errors.confirm_password}</div>}
                 </div>
+                {errors.confirm_password && (
+                  <div className="text-danger small mt-1">
+                    {errors.confirm_password}
+                  </div>
+                )}
               </div>
 
               {/* Terms Checkbox */}
-              <div className="mb-3 form-check">
+              <div className="mb-4 form-check">
                 <input
                   type="checkbox"
                   name="agreeTerms"
-                  className={`form-check-input ${errors.agreeTerms ? 'is-invalid' : ''}`}
+                  className={`form-check-input ${
+                    errors.agreeTerms ? 'is-invalid' : ''
+                  }`}
                   id="agreeTerms"
                   checked={formData.agreeTerms}
                   onChange={handleChange}
+                  style={{ accentColor: '#4F46E5' }}
                 />
-                <label className="form-check-label small" htmlFor="agreeTerms">
-                  I agree to the <span className="text-primary">Terms of Service</span> and <span className="text-primary">Privacy Policy</span>
+                <label className="form-check-label small text-muted" htmlFor="agreeTerms">
+                  I agree to the{' '}
+                  <span className="fw-medium" style={{ color: '#4F46E5' }}>
+                    Terms of Service
+                  </span>{' '}
+                  and{' '}
+                  <span className="fw-medium" style={{ color: '#4F46E5' }}>
+                    Privacy Policy
+                  </span>
                 </label>
-                {errors.agreeTerms && <div className="invalid-feedback">{errors.agreeTerms}</div>}
+                {errors.agreeTerms && (
+                  <div className="invalid-feedback">{errors.agreeTerms}</div>
+                )}
               </div>
 
               {/* Submit Button */}
               <button
                 type="submit"
-                className="btn btn-primary-custom w-100 py-2 mb-3"
+                className="btn w-100 py-2 mb-3 fw-semibold text-white d-flex align-items-center justify-content-center gap-2"
+                style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
                 disabled={isSubmitting}
               >
                 {isSubmitting ? (
                   <>
-                    <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                    <span
+                      className="spinner-border spinner-border-sm"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
                     Creating account...
                   </>
                 ) : (
-                  'Create Account'
+                  <>
+                    <i className="bi bi-person-check"></i> Create Account
+                  </>
                 )}
               </button>
 
-              <div className="text-center small text-muted">
-                Already have an account? <Link to="/login" className="text-primary fw-semibold text-decoration-none">Log in</Link>
+              {/* Login Link */}
+              <div className="text-center border-top pt-3 mt-3">
+                <p className="text-muted small mb-0">
+                  Already have an account?{' '}
+                  <Link
+                    to="/login"
+                    className="fw-semibold text-decoration-none"
+                    style={{ color: '#4F46E5' }}
+                  >
+                    Sign In
+                  </Link>
+                </p>
               </div>
             </form>
+          </div>
+
+          {/* Subtle Footer Admin Link */}
+          <div className="text-center text-muted small mt-4">
+            Are you a platform administrator?{' '}
+            <Link
+              to="/admin-login"
+              className="text-decoration-none fw-medium"
+              style={{ color: '#4F46E5' }}
+            >
+              Admin Portal
+            </Link>
           </div>
         </div>
       </div>

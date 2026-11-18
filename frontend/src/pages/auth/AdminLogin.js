@@ -1,87 +1,169 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const navigate = useNavigate();
 
   const handleAdminLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
     setError('');
+
     try {
       const user = await login(email, password);
-      if (user.role !== 'admin') {
-        setError('Access denied. Administrator privileges required.');
-        return;
+      if (user?.role === 'admin') {
+        navigate('/admin');
+      } else {
+        setError('Access denied. This portal is restricted to platform administrators.');
+        localStorage.removeItem('careerai_access_token');
+        localStorage.removeItem('careerai_refresh_token');
+        localStorage.removeItem('careerai_user');
       }
-      navigate('/admin');
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid administrator credentials.');
+      setError(
+        err.response?.data?.detail ||
+          err.response?.data?.message ||
+          'Invalid administrator credentials. Please try again.'
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="container-fluid min-vh-100 d-flex p-0" style={{ backgroundColor: '#0B0F19', color: '#F8FAFC' }}>
+    <div
+      className="container-fluid min-vh-100 d-flex p-0"
+      style={{ backgroundColor: '#F8FAFC' }}
+    >
       <div className="row g-0 flex-grow-1">
-        {/* Left Side: Dark Hero Brand */}
-        <div className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5" style={{ borderRight: '1px solid #1E293B', background: 'radial-gradient(circle at 30% 30%, #1E1B4B 0%, #0B0F19 100%)' }}>
+        {/* Left Side: Dark Hero Admin Brand Panel */}
+        <div
+          className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5 text-white"
+          style={{
+            background: 'radial-gradient(circle at 30% 30%, #1E1B4B 0%, #050814 100%)',
+            borderRight: '1px solid #1E293B',
+          }}
+        >
+          {/* Brand Logo */}
           <div>
-            <span className="fs-3 fw-bold text-white">
-              <i className="bi bi-shield-lock-fill text-primary me-2"></i>CareerAI <span className="badge bg-primary fs-6">Admin</span>
-            </span>
+            <Link
+              to="/"
+              className="text-decoration-none fs-3 fw-bold text-white d-inline-flex align-items-center"
+            >
+              <i className="bi bi-layers-fill me-2" style={{ color: '#6366F1' }}></i>
+              CareerAI
+            </Link>
           </div>
 
+          {/* Center Hero Copy */}
           <div className="my-auto py-5">
-            <h1 className="display-6 fw-bold mb-3 text-white">Secure Admin Portal</h1>
-            <p className="text-secondary lead fs-6 mb-4">
-              Manage users, job matching algorithms, and platform settings with complete control and transparency.
+            <h1 className="display-6 fw-bold mb-3 text-white">
+              CareerAI <span style={{ color: '#6366F1' }}>Admin</span>
+            </h1>
+            <div
+              className="mb-4"
+              style={{
+                width: '48px',
+                height: '3px',
+                backgroundColor: '#4F46E5',
+                borderRadius: '2px',
+              }}
+            ></div>
+            <h5 className="fw-semibold text-white mb-2">Secure Admin Portal</h5>
+            <p
+              className="text-secondary lead fs-6 mb-5"
+              style={{ maxWidth: '400px' }}
+            >
+              Manage users, content, and platform settings with complete control and transparency.
             </p>
 
-            <div className="d-flex gap-4 text-secondary small">
-              <div><i className="bi bi-lock-fill me-1 text-primary"></i> Secure Access</div>
-              <div><i className="bi bi-activity me-1 text-primary"></i> System Monitoring</div>
-              <div><i className="bi bi-people-fill me-1 text-primary"></i> User Management</div>
+            {/* Decorative Shield Graphic */}
+            <div className="my-4 text-center opacity-25">
+              <i className="bi bi-shield-lock" style={{ fontSize: '6rem', color: '#6366F1' }}></i>
+            </div>
+
+            {/* Feature Highlights Footer Row */}
+            <div className="d-flex flex-wrap gap-4 text-secondary small pt-3 border-top border-secondary border-opacity-25">
+              <div>
+                <i className="bi bi-shield-check me-1" style={{ color: '#6366F1' }}></i> Secure Access
+              </div>
+              <div>
+                <i className="bi bi-display me-1" style={{ color: '#6366F1' }}></i> System Monitoring
+              </div>
+              <div>
+                <i className="bi bi-people me-1" style={{ color: '#6366F1' }}></i> User Management
+              </div>
             </div>
           </div>
 
+          {/* Copyright */}
           <div className="text-secondary small">
-            © 2026 CareerAI. All rights reserved.
+            © {new Date().getFullYear()} CareerAI. All rights reserved.
           </div>
         </div>
 
-        {/* Right Side: Admin Form Card */}
-        <div className="col-lg-7 d-flex align-items-center justify-content-center p-4">
-          <div className="card border-0 p-4 p-md-5" style={{ maxWidth: '440px', width: '100%', backgroundColor: '#111827', borderRadius: '16px', border: '1px solid #1F2937' }}>
+        {/* Right Side: Centered Admin Login Card */}
+        <div className="col-lg-7 d-flex flex-column align-items-center justify-content-center p-4">
+          <div
+            className="card bg-white p-4 p-md-5 shadow-sm"
+            style={{
+              maxWidth: '450px',
+              width: '100%',
+              borderRadius: '16px',
+              border: '1px solid #E2E8F0',
+            }}
+          >
+            {/* Card Header */}
             <div className="text-center mb-4">
-              <div className="d-inline-flex p-3 rounded-circle mb-2" style={{ backgroundColor: '#1E1B4B', color: '#6366F1' }}>
-                <i className="bi bi-shield-check fs-2"></i>
+              <div
+                className="d-inline-flex align-items-center justify-content-center rounded-circle mb-3"
+                style={{
+                  width: '56px',
+                  height: '56px',
+                  backgroundColor: '#EEF2FF',
+                  color: '#4F46E5',
+                }}
+              >
+                <i className="bi bi-shield-lock fs-3"></i>
               </div>
-              <h3 className="fw-bold text-white mb-1">Admin Login</h3>
-              <p className="text-secondary small">Access the CareerAI Admin Dashboard</p>
+              <h3 className="fw-bold text-dark mb-1">Admin Login</h3>
+              <p className="text-muted small mb-0">
+                Access the CareerAI Admin Dashboard
+              </p>
             </div>
 
-            {error && <div className="alert alert-danger py-2 small">{error}</div>}
+            {error && (
+              <div
+                className="alert alert-danger py-2 small d-flex align-items-center"
+                role="alert"
+              >
+                <i className="bi bi-exclamation-circle-fill me-2"></i>
+                <div>{error}</div>
+              </div>
+            )}
 
             <form onSubmit={handleAdminLogin}>
+              {/* Admin Email */}
               <div className="mb-3">
-                <label className="form-label small text-secondary">Admin Email</label>
+                <label className="form-label small fw-semibold text-dark">
+                  Admin Email
+                </label>
                 <div className="input-group">
-                  <span className="input-group-text bg-dark border-secondary text-secondary">
+                  <span className="input-group-text bg-white border-end-0 text-muted">
                     <i className="bi bi-envelope"></i>
                   </span>
                   <input
                     type="email"
-                    className="form-control bg-dark text-white border-secondary"
+                    className="form-control border-start-0 ps-0"
                     placeholder="admin@careerai.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -90,51 +172,125 @@ const AdminLogin = () => {
                 </div>
               </div>
 
+              {/* Password */}
               <div className="mb-3">
-                <label className="form-label small text-secondary">Password</label>
+                <label className="form-label small fw-semibold text-dark">
+                  Password
+                </label>
                 <div className="input-group">
-                  <span className="input-group-text bg-dark border-secondary text-secondary">
-                    <i className="bi bi-key"></i>
+                  <span className="input-group-text bg-white border-end-0 text-muted">
+                    <i className="bi bi-lock"></i>
                   </span>
                   <input
-                    type="password"
-                    className="form-control bg-dark text-white border-secondary"
-                    placeholder="Enter admin password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-control border-start-0 border-end-0 ps-0"
+                    placeholder="Enter your password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                   />
+                  <button
+                    type="button"
+                    className="input-group-text bg-white border-start-0 text-muted"
+                    onClick={() => setShowPassword(!showPassword)}
+                    tabIndex="-1"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
+                  </button>
                 </div>
               </div>
 
+              {/* Remember Me & Forgot Password */}
               <div className="d-flex justify-content-between align-items-center mb-4">
                 <div className="form-check">
                   <input
                     type="checkbox"
-                    className="form-check-input bg-dark border-secondary"
+                    className="form-check-input"
                     id="rememberAdmin"
                     checked={rememberMe}
                     onChange={(e) => setRememberMe(e.target.checked)}
+                    style={{ accentColor: '#4F46E5' }}
                   />
-                  <label className="form-check-label text-secondary small" htmlFor="rememberAdmin">
+                  <label
+                    className="form-check-label text-muted small"
+                    htmlFor="rememberAdmin"
+                  >
                     Remember me
                   </label>
                 </div>
+                <Link
+                  to="/forgot-password"
+                  className="small fw-medium text-decoration-none"
+                  style={{ color: '#4F46E5' }}
+                >
+                  Forgot password?
+                </Link>
               </div>
 
+              {/* Primary Submit Button */}
               <button
                 type="submit"
-                className="btn w-100 py-2 mb-3 fw-medium text-white"
-                style={{ backgroundColor: '#4F46E5' }}
+                className="btn w-100 py-2 mb-3 fw-semibold text-white d-flex align-items-center justify-content-center gap-2"
+                style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
                 disabled={loading}
               >
-                {loading ? 'Authenticating...' : 'Login to Admin Panel'}
+                {loading ? (
+                  <>
+                    <span
+                      className="spinner-border spinner-border-sm"
+                      role="status"
+                      aria-hidden="true"
+                    ></span>
+                    Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-shield-check"></i> Login to Admin Panel
+                  </>
+                )}
               </button>
 
-              <div className="text-center text-secondary small">
-                <i className="bi bi-shield-shaded me-1"></i> All admin activity is logged for audit security.
+              {/* Redirect Button to Candidate Login */}
+              <Link
+                to="/login"
+                className="btn btn-outline-secondary w-100 py-2 mb-3 fw-semibold d-flex align-items-center justify-content-center gap-2"
+                style={{ borderRadius: '8px' }}
+              >
+                <i className="bi bi-arrow-left"></i> Back to Candidate Login
+              </Link>
+
+              {/* Secure Access Footer Notice */}
+              <div className="text-center border-top pt-3 mt-2">
+                <div className="text-muted small fw-semibold mb-1">
+                  Secure Access
+                </div>
+                <p className="text-muted mb-0" style={{ fontSize: '12px' }}>
+                  <i className="bi bi-lock-fill me-1"></i>
+                  This is a secure admin area. All activities are monitored and logged for your protection.
+                </p>
               </div>
             </form>
+          </div>
+
+          {/* Support & Candidate Portal Footer */}
+          <div className="text-center text-muted small mt-4">
+            Looking for your candidate account?{' '}
+            <Link
+              to="/login"
+              className="text-decoration-none fw-medium"
+              style={{ color: '#4F46E5' }}
+            >
+              Sign in here
+            </Link>{' '}
+            • Need help?{' '}
+            <a
+              href="mailto:support@careerai.com"
+              className="text-decoration-none fw-medium"
+              style={{ color: '#4F46E5' }}
+            >
+              support@careerai.com
+            </a>
           </div>
         </div>
       </div>
