@@ -1,159 +1,258 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS,
-  ArcElement,
   CategoryScale,
   LinearScale,
   BarElement,
+  ArcElement,
+  Title,
   Tooltip,
   Legend,
 } from 'chart.js';
+import { Bar, Doughnut } from 'react-chartjs-2';
 import { useAuth } from '../../context/AuthContext';
 import adminService from '../../services/adminService';
 
-ChartJS.register(ArcElement, CategoryScale, LinearScale, BarElement, Tooltip, Legend);
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend
+);
 
 const AdminDashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  // Navigation & Global UI State
   const [activeTab, setActiveTab] = useState('overview');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [toast, setToast] = useState(null);
 
-  // Data States
+  // Backend Data States
   const [overview, setOverview] = useState(null);
   const [users, setUsers] = useState([]);
-  const [userSearch, setUserSearch] = useState('');
-  const [userRoleFilter, setUserRoleFilter] = useState('');
-
   const [jobs, setJobs] = useState([]);
-  const [newJob, setNewJob] = useState({
+  const [questions, setQuestions] = useState([]);
+
+  // User Management Filters & Drawers
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('all');
+  const [userStatusFilter, setUserStatusFilter] = useState('all');
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [userConfirmModal, setUserConfirmModal] = useState(null); // { type: 'disable' | 'enable' | 'delete', target: userObj }
+
+  // Job Management Filters & Modals
+  const [jobSearch, setJobSearch] = useState('');
+  const [jobStatusFilter, setJobStatusFilter] = useState('all');
+  const [showJobModal, setShowJobModal] = useState(false);
+  const [editingJob, setEditingJob] = useState(null);
+  const [jobDeleteTarget, setJobDeleteTarget] = useState(null);
+  const [jobForm, setJobForm] = useState({
     title: '',
     company: '',
     location: 'Remote',
     job_type: 'Full-time',
-    experience_level: 'Entry Level',
-    min_experience_years: 1,
-    salary_range: '6 - 10 LPA',
-    description: '',
+    experience_level: 'Mid Level',
+    min_experience_years: 2,
+    salary_range: '',
     required_skills: '',
+    preferred_skills: '',
+    description: '',
+    is_active: true,
   });
 
-  const [questions, setQuestions] = useState([]);
-  const [newQuestion, setNewQuestion] = useState({
+  // Question Bank Filters & Modals
+  const [questionSearch, setQuestionSearch] = useState('');
+  const [questionCategoryFilter, setQuestionCategoryFilter] = useState('All');
+  const [showQuestionModal, setShowQuestionModal] = useState(false);
+  const [editingQuestion, setEditingQuestion] = useState(null);
+  const [questionDeleteTarget, setQuestionDeleteTarget] = useState(null);
+  const [questionForm, setQuestionForm] = useState({
     category: 'Technical',
-    role_target: 'Software Engineer',
     difficulty: 'Medium',
+    role_target: 'Software Engineer',
     question_text: '',
     ideal_points: '',
     sample_answer: '',
   });
 
-  const handleSignOut = () => {
-    logout();
-    navigate('/admin-login');
-  };
+  const showToast = useCallback((type, title, message) => {
+    setToast({ type, title, message });
+    setTimeout(() => {
+      setToast(null);
+    }, 4000);
+  }, []);
 
-  const showToast = (msg) => {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(''), 3500);
-  };
-
-  const loadAllData = useCallback(async () => {
+  // Load All Admin Data
+  const fetchAllAdminData = useCallback(async () => {
     setLoading(true);
-    setError('');
     try {
-      const [overviewData, usersData, jobsData, questionsData] = await Promise.all([
+      const [overviewRes, usersRes, jobsRes, questionsRes] = await Promise.all([
         adminService.getOverview(),
         adminService.getUsers(),
         adminService.getJobs(),
         adminService.getQuestions(),
       ]);
-      setOverview(overviewData);
-      setUsers(usersData);
-      setJobs(jobsData);
-      setQuestions(questionsData);
+      setOverview(overviewRes);
+      setUsers(Array.isArray(usersRes) ? usersRes : usersRes.results || []);
+      setJobs(Array.isArray(jobsRes) ? jobsRes : jobsRes.results || []);
+      setQuestions(Array.isArray(questionsRes) ? questionsRes : questionsRes.results || []);
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          'Failed to load administrator telemetry. Ensure your account has Admin privileges.'
+      showToast(
+        'danger',
+        'Failed to load admin metrics',
+        err.response?.data?.detail || 'Please verify your administrator session.'
       );
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [showToast]);
 
   useEffect(() => {
-    loadAllData();
-  }, [loadAllData]);
+    fetchAllAdminData();
+  }, [fetchAllAdminData]);
 
-  // --- User Management Handlers ---
-  const handleToggleUserStatus = async (targetUser) => {
+  const handleLogout = () => {
+    logout();
+    navigate('/admin-login');
+  };
+
+  // ==================== USER MANAGEMENT HANDLERS ====================
+  const handleConfirmUserAction = async () => {
+    if (!userConfirmModal) return;
+    const { type, target } = userConfirmModal;
     try {
-      const updated = await adminService.updateUser(targetUser.id, {
-        is_active: !targetUser.is_active,
-      });
+      if (type === 'delete') {
+        await adminService.deleteUser(target.id);
+        setUsers((prev) => prev.filter((u) => u.id !== target.id));
+        if (selectedUser?.id === target.id) setSelectedUser(null);
+        showToast('success', 'User deleted', `${target.email} has been permanently removed.`);
+      } else {
+        const nextActive = type === 'enable';
+        const updated = await adminService.updateUser(target.id, { is_active: nextActive });
+        setUsers((prev) => prev.map((u) => (u.id === target.id ? updated : u)));
+        if (selectedUser?.id === target.id) setSelectedUser(updated);
+        showToast(
+          'success',
+          'User status updated successfully!',
+          `${target.full_name || target.email} has been ${nextActive ? 'activated' : 'disabled'}.`
+        );
+      }
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
+    } catch (err) {
+      showToast(
+        'danger',
+        'Action blocked',
+        err.response?.data?.detail || 'Unable to update user account.'
+      );
+    } finally {
+      setUserConfirmModal(null);
+    }
+  };
+
+  const handleUserRoleChange = async (targetUser, newRole) => {
+    if (targetUser.role === newRole) return;
+    try {
+      const updated = await adminService.updateUser(targetUser.id, { role: newRole });
       setUsers((prev) => prev.map((u) => (u.id === targetUser.id ? updated : u)));
-      showToast(`User ${targetUser.email} is now ${updated.is_active ? 'Active' : 'Suspended'}.`);
+      if (selectedUser?.id === targetUser.id) setSelectedUser(updated);
+      showToast(
+        'success',
+        'Role updated',
+        `${targetUser.full_name || targetUser.email} is now set to ${newRole.toUpperCase()}.`
+      );
     } catch (err) {
-      setError(err.response?.data?.detail || 'Unable to update user status.');
+      showToast(
+        'danger',
+        'Role change blocked',
+        err.response?.data?.detail || 'Unable to modify user role.'
+      );
     }
   };
 
-  const handleToggleUserRole = async (targetUser) => {
-    const nextRole = targetUser.role === 'admin' ? 'candidate' : 'admin';
-    try {
-      const updated = await adminService.updateUser(targetUser.id, { role: nextRole });
-      setUsers((prev) => prev.map((u) => (u.id === targetUser.id ? updated : u)));
-      showToast(`Updated ${targetUser.email} role to ${nextRole.toUpperCase()}.`);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Unable to update user role.');
-    }
+  // ==================== JOB CATALOG HANDLERS ====================
+  const openCreateJobModal = () => {
+    setEditingJob(null);
+    setJobForm({
+      title: '',
+      company: '',
+      location: 'Remote',
+      job_type: 'Full-time',
+      experience_level: 'Mid Level',
+      min_experience_years: 2,
+      salary_range: '',
+      required_skills: '',
+      preferred_skills: '',
+      description: '',
+      is_active: true,
+    });
+    setShowJobModal(true);
   };
 
-  const handleDeleteUser = async (targetUser) => {
-    if (!window.confirm(`Permanently delete user ${targetUser.email}?`)) return;
-    try {
-      await adminService.deleteUser(targetUser.id);
-      setUsers((prev) => prev.filter((u) => u.id !== targetUser.id));
-      showToast(`Deleted user ${targetUser.email}.`);
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Unable to delete user.');
-    }
+  const openEditJobModal = (job) => {
+    setEditingJob(job);
+    setJobForm({
+      title: job.title || '',
+      company: job.company || '',
+      location: job.location || 'Remote',
+      job_type: job.job_type || 'Full-time',
+      experience_level: job.experience_level || 'Mid Level',
+      min_experience_years: job.min_experience_years ?? 1,
+      salary_range: job.salary_range || '',
+      required_skills: Array.isArray(job.required_skills) ? job.required_skills.join(', ') : '',
+      preferred_skills: Array.isArray(job.preferred_skills) ? job.preferred_skills.join(', ') : '',
+      description: job.description || '',
+      is_active: job.is_active !== false,
+    });
+    setShowJobModal(true);
   };
 
-  // --- Job Management Handlers ---
-  const handleCreateJob = async (e) => {
+  const handleSaveJob = async (e) => {
     e.preventDefault();
+    const payload = {
+      ...jobForm,
+      min_experience_years: Number(jobForm.min_experience_years) || 0,
+      required_skills: jobForm.required_skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      preferred_skills: jobForm.preferred_skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+
+    if (payload.required_skills.length === 0) {
+      showToast('warning', 'Missing skills', 'Please enter at least one required skill.');
+      return;
+    }
+
     try {
-      const payload = {
-        ...newJob,
-        min_experience_years: Number(newJob.min_experience_years) || 0,
-        required_skills: newJob.required_skills
-          .split(',')
-          .map((s) => s.trim())
-          .filter(Boolean),
-      };
-      const created = await adminService.createJob(payload);
-      setJobs((prev) => [created, ...prev]);
-      setNewJob({
-        title: '',
-        company: '',
-        location: 'Remote',
-        job_type: 'Full-time',
-        experience_level: 'Entry Level',
-        min_experience_years: 1,
-        salary_range: '6 - 10 LPA',
-        description: '',
-        required_skills: '',
-      });
-      showToast(`Job "${created.title}" published.`);
+      if (editingJob) {
+        const updated = await adminService.updateJob(editingJob.id, payload);
+        setJobs((prev) => prev.map((j) => (j.id === editingJob.id ? updated : j)));
+        showToast('success', 'Job updated', `"${updated.title}" has been saved.`);
+      } else {
+        const created = await adminService.createJob(payload);
+        setJobs((prev) => [created, ...prev]);
+        showToast('success', 'Job published', `"${created.title}" is now live in the catalog.`);
+      }
+      setShowJobModal(false);
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
     } catch (err) {
-      setError('Failed to create job posting. Verify all fields.');
+      showToast(
+        'danger',
+        'Save failed',
+        err.response?.data?.detail || 'Please check all required job fields.'
+      );
     }
   };
 
@@ -161,1036 +260,1947 @@ const AdminDashboard = () => {
     try {
       const updated = await adminService.updateJob(job.id, { is_active: !job.is_active });
       setJobs((prev) => prev.map((j) => (j.id === job.id ? updated : j)));
-      showToast(`Job "${job.title}" marked ${updated.is_active ? 'Active' : 'Archived'}.`);
+      showToast(
+        'success',
+        updated.is_active ? 'Job activated' : 'Job archived',
+        `"${job.title}" is now ${updated.is_active ? 'active' : 'hidden from candidates'}.`
+      );
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
     } catch (err) {
-      setError('Failed to update job status.');
+      showToast('danger', 'Update failed', 'Could not toggle job visibility.');
     }
   };
 
-  const handleDeleteJob = async (job) => {
-    if (!window.confirm(`Delete job "${job.title}"?`)) return;
+  const handleConfirmDeleteJob = async () => {
+    if (!jobDeleteTarget) return;
     try {
-      await adminService.deleteJob(job.id);
-      setJobs((prev) => prev.filter((j) => j.id !== job.id));
-      showToast(`Deleted job "${job.title}".`);
+      await adminService.deleteJob(jobDeleteTarget.id);
+      setJobs((prev) => prev.filter((j) => j.id !== jobDeleteTarget.id));
+      showToast('success', 'Job deleted', `"${jobDeleteTarget.title}" removed from catalog.`);
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
     } catch (err) {
-      setError('Failed to delete job.');
+      showToast('danger', 'Delete failed', 'Unable to delete this job posting.');
+    } finally {
+      setJobDeleteTarget(null);
     }
   };
 
-  // --- Question Bank Management Handlers ---
-  const handleCreateQuestion = async (e) => {
+  // ==================== QUESTION BANK HANDLERS ====================
+  const openCreateQuestionModal = () => {
+    setEditingQuestion(null);
+    setQuestionForm({
+      category: 'Technical',
+      difficulty: 'Medium',
+      role_target: 'Software Engineer',
+      question_text: '',
+      ideal_points: '',
+      sample_answer: '',
+    });
+    setShowQuestionModal(true);
+  };
+
+  const openEditQuestionModal = (q) => {
+    setEditingQuestion(q);
+    setQuestionForm({
+      category: q.category || 'Technical',
+      difficulty: q.difficulty || 'Medium',
+      role_target: q.role_target || 'Software Engineer',
+      question_text: q.question_text || '',
+      ideal_points: Array.isArray(q.ideal_points)
+        ? q.ideal_points.join(', ')
+        : q.ideal_points || '',
+      sample_answer: q.sample_answer || '',
+    });
+    setShowQuestionModal(true);
+  };
+
+  const handleSaveQuestion = async (e) => {
     e.preventDefault();
+    const payload = {
+      category: questionForm.category,
+      difficulty: questionForm.difficulty,
+      role_target: questionForm.role_target,
+      question_text: questionForm.question_text,
+      ideal_points: questionForm.ideal_points
+        .split(',')
+        .map((p) => p.trim())
+        .filter(Boolean),
+      sample_answer: questionForm.sample_answer,
+    };
+
     try {
-      const payload = {
-        ...newQuestion,
-        ideal_points: newQuestion.ideal_points
-          .split(',')
-          .map((p) => p.trim())
-          .filter(Boolean),
-      };
-      const created = await adminService.createQuestion(payload);
-      setQuestions((prev) => [created, ...prev]);
-      setNewQuestion({
-        category: 'Technical',
-        role_target: 'Software Engineer',
-        difficulty: 'Medium',
-        question_text: '',
-        ideal_points: '',
-        sample_answer: '',
-      });
-      showToast('Interview question added to Question Bank.');
+      if (editingQuestion) {
+        const updated = await adminService.updateQuestion(editingQuestion.id, payload);
+        setQuestions((prev) => prev.map((q) => (q.id === editingQuestion.id ? updated : q)));
+        showToast('success', 'Question updated', 'Interview prompt changes saved.');
+      } else {
+        const created = await adminService.createQuestion(payload);
+        setQuestions((prev) => [created, ...prev]);
+        showToast('success', 'Question added', 'New prompt added to the AI Question Bank.');
+      }
+      setShowQuestionModal(false);
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
     } catch (err) {
-      setError('Failed to add question.');
+      showToast(
+        'danger',
+        'Save failed',
+        err.response?.data?.detail || 'Please verify all question fields.'
+      );
     }
   };
 
-  const handleDeleteQuestion = async (q) => {
-    if (!window.confirm('Delete this question from the Question Bank?')) return;
+  const handleConfirmDeleteQuestion = async () => {
+    if (!questionDeleteTarget) return;
     try {
-      await adminService.deleteQuestion(q.id);
-      setQuestions((prev) => prev.filter((item) => item.id !== q.id));
-      showToast('Question removed.');
+      await adminService.deleteQuestion(questionDeleteTarget.id);
+      setQuestions((prev) => prev.filter((q) => q.id !== questionDeleteTarget.id));
+      showToast('success', 'Question removed', 'Prompt deleted from the Question Bank.');
+      const freshOverview = await adminService.getOverview();
+      setOverview(freshOverview);
     } catch (err) {
-      setError('Failed to delete question.');
+      showToast('danger', 'Delete failed', 'Unable to remove interview question.');
+    } finally {
+      setQuestionDeleteTarget(null);
     }
   };
 
-  if (loading) {
-    return (
-      <div
-        className="min-vh-100 d-flex flex-column justify-content-center align-items-center"
-        style={{ backgroundColor: '#F8FAFC' }}
-      >
-        <div className="spinner-border" style={{ color: '#4F46E5' }} role="status" />
-        <p className="text-muted small mt-3">Loading CareerAI Admin Control Panel...</p>
-      </div>
-    );
-  }
+  // ==================== FILTERED LISTS ====================
+  const filteredUsers = users.filter((u) => {
+    const matchesSearch =
+      !userSearch ||
+      u.email?.toLowerCase().includes(userSearch.toLowerCase()) ||
+      u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+      u.username?.toLowerCase().includes(userSearch.toLowerCase());
+    const matchesRole = userRoleFilter === 'all' || u.role === userRoleFilter;
+    const matchesStatus =
+      userStatusFilter === 'all' ||
+      (userStatusFilter === 'active' && u.is_active) ||
+      (userStatusFilter === 'inactive' && !u.is_active);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
 
+  const filteredJobs = jobs.filter((j) => {
+    const matchesSearch =
+      !jobSearch ||
+      j.title?.toLowerCase().includes(jobSearch.toLowerCase()) ||
+      j.company?.toLowerCase().includes(jobSearch.toLowerCase()) ||
+      j.location?.toLowerCase().includes(jobSearch.toLowerCase());
+    const matchesStatus =
+      jobStatusFilter === 'all' ||
+      (jobStatusFilter === 'active' && j.is_active) ||
+      (jobStatusFilter === 'inactive' && !j.is_active);
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredQuestions = questions.filter((q) => {
+    const matchesSearch =
+      !questionSearch ||
+      q.question_text?.toLowerCase().includes(questionSearch.toLowerCase()) ||
+      q.role_target?.toLowerCase().includes(questionSearch.toLowerCase());
+    const matchesCat =
+      questionCategoryFilter === 'All' || q.category === questionCategoryFilter;
+    return matchesSearch && matchesCat;
+  });
+
+  // ==================== CHART.JS CONFIGS ====================
   const kpis = overview?.kpis || {};
   const health = overview?.system_health || {};
+  const appStatuses = overview?.charts?.application_statuses || [];
+  const qCategories = overview?.charts?.question_categories || [];
 
-  // Chart configurations
-  const questionChartData = {
-    labels: (overview?.charts?.question_categories || []).map((c) => c.category),
+  const applicationBarData = {
+    labels: appStatuses.length
+      ? appStatuses.map((item) => item.status)
+      : ['Saved', 'Applied', 'Screening', 'Interview', 'Offer'],
     datasets: [
       {
-        data: (overview?.charts?.question_categories || []).map((c) => c.count),
-        backgroundColor: ['#4F46E5', '#10B981', '#F59E0B', '#06B6D4'],
+        label: 'Candidate Applications',
+        data: appStatuses.length ? appStatuses.map((item) => item.count) : [0, 0, 0, 0, 0],
+        backgroundColor: '#4F46E5',
+        borderRadius: 8,
+        barThickness: 28,
+      },
+    ],
+  };
+
+  const questionDoughnutData = {
+    labels: qCategories.length
+      ? qCategories.map((c) => c.category)
+      : ['Technical', 'Behavioral', 'HR', 'Project-based'],
+    datasets: [
+      {
+        data: qCategories.length ? qCategories.map((c) => c.count) : [1, 1, 1, 1],
+        backgroundColor: ['#4F46E5', '#10B981', '#F59E0B', '#0EA5E9', '#8B5CF6'],
         borderWidth: 0,
       },
     ],
   };
 
-  const applicationChartData = {
-    labels: (overview?.charts?.application_statuses || []).map((s) => s.status),
-    datasets: [
-      {
-        label: 'Applications',
-        data: (overview?.charts?.application_statuses || []).map((s) => s.count),
-        backgroundColor: '#4F46E5',
-        borderRadius: 8,
-      },
-    ],
-  };
+  // ==================== SIDEBAR NAVIGATION ITEMS ====================
+  const navGroups = [
+    {
+      label: 'OVERVIEW',
+      items: [{ key: 'overview', label: 'Dashboard', icon: 'bi-grid-1x2-fill' }],
+    },
+    {
+      label: 'MANAGEMENT',
+      items: [
+        { key: 'users', label: 'Users', icon: 'bi-people-fill', count: users.length },
+        { key: 'jobs', label: 'Job Listings', icon: 'bi-briefcase-fill', count: jobs.length },
+        {
+          key: 'questions',
+          label: 'Question Bank',
+          icon: 'bi-chat-square-quote-fill',
+          count: questions.length,
+        },
+      ],
+    },
+  ];
 
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      u.email.toLowerCase().includes(userSearch.toLowerCase()) ||
-      (u.full_name || '').toLowerCase().includes(userSearch.toLowerCase());
-    const matchesRole = userRoleFilter ? u.role === userRoleFilter : true;
-    return matchesSearch && matchesRole;
-  });
-
-  const cardStyle = {
-    borderRadius: '16px',
-    border: '1px solid #E2E8F0',
-    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
+  const getInitials = (nameOrEmail = 'A') => {
+    const clean = nameOrEmail.trim();
+    const parts = clean.split(' ');
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return clean.slice(0, 2).toUpperCase();
   };
 
   return (
     <div className="d-flex min-vh-100" style={{ backgroundColor: '#F8FAFC' }}>
-      {/* Dedicated Sticky Dark Admin Sidebar (Desktop >= 992px) */}
-      <aside
-        className="d-none d-lg-flex flex-column justify-content-between p-3 text-white flex-shrink-0 sticky-top vh-100"
-        style={{ width: '260px', backgroundColor: '#0B0F19', borderRight: '1px solid #1E293B' }}
-      >
-        <div>
-          {/* Admin Brand Header */}
-          <div className="d-flex align-items-center gap-2 px-2 py-3 mb-3 border-bottom border-secondary border-opacity-25">
-            <div
-              className="d-inline-flex align-items-center justify-content-center rounded-3"
-              style={{ width: '36px', height: '36px', backgroundColor: '#4F46E5' }}
-            >
-              <i className="bi bi-shield-lock-fill text-white"></i>
-            </div>
-            <div>
-              <div className="fw-bold lh-1">CareerAI</div>
-              <small className="text-secondary" style={{ fontSize: '11px' }}>
-                Admin Control Panel
-              </small>
-            </div>
-          </div>
-
-          {/* Admin-Only Navigation */}
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div
+          className="position-fixed top-0 end-0 m-4 p-3 bg-white d-flex align-items-start gap-3"
+          style={{
+            zIndex: 1080,
+            minWidth: '320px',
+            maxWidth: '400px',
+            borderRadius: '14px',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 12px 28px rgba(15, 23, 42, 0.12)',
+          }}
+        >
           <div
-            className="text-uppercase text-secondary fw-semibold px-2 mb-2"
-            style={{ fontSize: '11px', letterSpacing: '0.05em' }}
+            className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+            style={{
+              width: '34px',
+              height: '34px',
+              backgroundColor:
+                toast.type === 'success'
+                  ? '#ECFDF5'
+                  : toast.type === 'warning'
+                  ? '#FFFBEB'
+                  : '#FEF2F2',
+              color:
+                toast.type === 'success'
+                  ? '#10B981'
+                  : toast.type === 'warning'
+                  ? '#F59E0B'
+                  : '#EF4444',
+            }}
           >
-            Platform Control
+            <i
+              className={`bi ${
+                toast.type === 'success'
+                  ? 'bi-check-circle-fill'
+                  : toast.type === 'warning'
+                  ? 'bi-exclamation-triangle-fill'
+                  : 'bi-x-circle-fill'
+              }`}
+            ></i>
           </div>
-          <ul className="nav flex-column gap-1">
-            <li className="nav-item">
-              <button
-                className={`btn w-100 text-start d-flex align-items-center gap-2 px-3 py-2 ${
-                  activeTab === 'overview' ? 'text-white fw-semibold' : 'text-secondary'
-                }`}
-                style={{
-                  backgroundColor: activeTab === 'overview' ? '#1E1B4B' : 'transparent',
-                  borderRadius: '10px',
-                }}
-                onClick={() => setActiveTab('overview')}
-              >
-                <i
-                  className="bi bi-speedometer2"
-                  style={{ color: activeTab === 'overview' ? '#6366F1' : undefined }}
-                ></i>
-                Dashboard & Health
-              </button>
-            </li>
-            <li className="nav-item">
-              <button
-                className={`btn w-100 text-start d-flex align-items-center justify-content-between px-3 py-2 ${
-                  activeTab === 'users' ? 'text-white fw-semibold' : 'text-secondary'
-                }`}
-                style={{
-                  backgroundColor: activeTab === 'users' ? '#1E1B4B' : 'transparent',
-                  borderRadius: '10px',
-                }}
-                onClick={() => setActiveTab('users')}
-              >
-                <span>
-                  <i
-                    className="bi bi-people me-2"
-                    style={{ color: activeTab === 'users' ? '#6366F1' : undefined }}
-                  ></i>
-                  User Management
-                </span>
-                <span className="badge bg-secondary bg-opacity-25 text-light">{users.length}</span>
-              </button>
-            </li>
-            <li className="nav-item">
-              <button
-                className={`btn w-100 text-start d-flex align-items-center justify-content-between px-3 py-2 ${
-                  activeTab === 'jobs' ? 'text-white fw-semibold' : 'text-secondary'
-                }`}
-                style={{
-                  backgroundColor: activeTab === 'jobs' ? '#1E1B4B' : 'transparent',
-                  borderRadius: '10px',
-                }}
-                onClick={() => setActiveTab('jobs')}
-              >
-                <span>
-                  <i
-                    className="bi bi-briefcase me-2"
-                    style={{ color: activeTab === 'jobs' ? '#6366F1' : undefined }}
-                  ></i>
-                  Job Catalog
-                </span>
-                <span className="badge bg-secondary bg-opacity-25 text-light">{jobs.length}</span>
-              </button>
-            </li>
-            <li className="nav-item">
-              <button
-                className={`btn w-100 text-start d-flex align-items-center justify-content-between px-3 py-2 ${
-                  activeTab === 'questions' ? 'text-white fw-semibold' : 'text-secondary'
-                }`}
-                style={{
-                  backgroundColor: activeTab === 'questions' ? '#1E1B4B' : 'transparent',
-                  borderRadius: '10px',
-                }}
-                onClick={() => setActiveTab('questions')}
-              >
-                <span>
-                  <i
-                    className="bi bi-chat-square-quote me-2"
-                    style={{ color: activeTab === 'questions' ? '#6366F1' : undefined }}
-                  ></i>
-                  Question Bank
-                </span>
-                <span className="badge bg-secondary bg-opacity-25 text-light">
-                  {questions.length}
-                </span>
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        {/* Sticky Sidebar Account Footer & Sign Out (Desktop Only) */}
-        <div className="border-top border-secondary border-opacity-25 pt-3">
-          <div className="px-2 mb-3">
-            <div className="small fw-semibold text-white text-truncate">
-              {user?.email || 'admin@careerai.com'}
-            </div>
-            <div className="text-secondary" style={{ fontSize: '11px' }}>
-              Super Administrator
+          <div className="flex-grow-1">
+            <div className="fw-bold text-dark small">{toast.title}</div>
+            <div className="text-muted" style={{ fontSize: '12px' }}>
+              {toast.message}
             </div>
           </div>
           <button
             type="button"
-            className="btn btn-outline-danger btn-sm w-100 d-flex align-items-center justify-content-center gap-2"
-            onClick={handleSignOut}
+            className="btn-close btn-sm"
+            onClick={() => setToast(null)}
+          ></button>
+        </div>
+      )}
+
+      {/* Left Sidebar (Viewport-Locked on Desktop + Drawer on Mobile) */}
+      <aside
+        className={`flex-column justify-content-between text-white p-3 flex-shrink-0 ${
+          mobileMenuOpen
+            ? 'd-flex position-fixed top-0 start-0 vh-100'
+            : 'd-none d-lg-flex sticky-top vh-100'
+        }`}
+        style={{
+          width: '264px',
+          minWidth: '264px',
+          height: '100vh',
+          overflowY: 'auto',
+          backgroundColor: '#050A18',
+          borderRight: '1px solid #1E293B',
+          zIndex: 1040,
+        }}
+      >
+        <div>
+          {/* Brand Header */}
+          <div className="d-flex align-items-center justify-content-between px-2 py-3 mb-3 border-bottom border-secondary border-opacity-25">
+            <div className="d-flex align-items-center gap-2">
+              <span
+                className="d-inline-flex align-items-center justify-content-center rounded-3"
+                style={{ width: '36px', height: '36px', backgroundColor: '#4F46E5' }}
+              >
+                <i className="bi bi-layers-fill text-white fs-5"></i>
+              </span>
+              <div>
+                <div className="fw-bold text-white lh-1" style={{ fontSize: '18px' }}>
+                  CareerAI
+                </div>
+                <div className="text-secondary" style={{ fontSize: '11px' }}>
+                  Admin Panel
+                </div>
+              </div>
+            </div>
+            <button
+              className="btn btn-sm btn-outline-secondary d-lg-none text-white border-0"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <i className="bi bi-x-lg"></i>
+            </button>
+          </div>
+
+          {/* Navigation Sections */}
+          {navGroups.map((group) => (
+            <div key={group.label} className="mb-4">
+              <div
+                className="px-3 mb-2 fw-semibold text-uppercase"
+                style={{ fontSize: '10.5px', letterSpacing: '0.08em', color: '#64748B' }}
+              >
+                {group.label}
+              </div>
+              <div className="d-flex flex-column gap-1">
+                {group.items.map((item) => {
+                  const isActive = activeTab === item.key;
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onClick={() => {
+                        setActiveTab(item.key);
+                        setMobileMenuOpen(false);
+                      }}
+                      className="btn text-start d-flex align-items-center justify-content-between px-3 py-2 border-0"
+                      style={{
+                        borderRadius: '10px',
+                        backgroundColor: isActive ? '#1E1B4B' : 'transparent',
+                        color: isActive ? '#FFFFFF' : '#94A3B8',
+                        fontWeight: isActive ? 600 : 500,
+                        fontSize: '14px',
+                        borderLeft: isActive ? '3px solid #6366F1' : '3px solid transparent',
+                      }}
+                    >
+                      <span className="d-flex align-items-center gap-2">
+                        <i
+                          className={`bi ${item.icon}`}
+                          style={{ color: isActive ? '#818CF8' : '#64748B' }}
+                        ></i>
+                        {item.label}
+                      </span>
+                      {typeof item.count === 'number' && (
+                        <span
+                          className="badge rounded-pill"
+                          style={{
+                            backgroundColor: isActive
+                              ? 'rgba(99, 102, 241, 0.35)'
+                              : 'rgba(148, 163, 184, 0.14)',
+                            color: isActive ? '#E0E7FF' : '#94A3B8',
+                            fontSize: '11px',
+                          }}
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Bottom System Status & Admin Profile */}
+        <div className="pt-3 border-top border-secondary border-opacity-25">
+          {/* System Status Mini-Widget */}
+          <div
+            className="p-3 mb-3 rounded-3"
+            style={{
+              backgroundColor: 'rgba(15, 23, 42, 0.9)',
+              border: '1px solid #1E293B',
+            }}
           >
-            <i className="bi bi-box-arrow-right"></i> Sign Out
+            <div className="small fw-semibold text-white mb-1">System Status</div>
+            <div className="d-flex align-items-center gap-2" style={{ fontSize: '12px', color: '#10B981' }}>
+              <span
+                className="rounded-circle d-inline-block"
+                style={{ width: '8px', height: '8px', backgroundColor: '#10B981' }}
+              ></span>
+              {health.database === 'Degraded' ? 'Database Attention' : 'All Systems Operational'}
+            </div>
+          </div>
+
+          {/* Admin User Card */}
+          <div className="d-flex align-items-center gap-2 px-2 py-2 mb-2">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white flex-shrink-0"
+              style={{
+                width: '36px',
+                height: '36px',
+                backgroundColor: '#4F46E5',
+                fontSize: '13px',
+              }}
+            >
+              {getInitials(user?.username || user?.email || 'AD')}
+            </div>
+            <div className="overflow-hidden">
+              <div className="fw-semibold text-white small text-truncate">
+                {user?.username || 'Admin User'}
+              </div>
+              <div className="text-secondary text-truncate" style={{ fontSize: '11px' }}>
+                Super Administrator
+              </div>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="btn w-100 text-start d-flex align-items-center gap-2 px-3 py-2 text-danger border-0"
+            style={{ fontSize: '13.5px', backgroundColor: 'rgba(239, 68, 68, 0.08)', borderRadius: '10px' }}
+          >
+            <i className="bi bi-box-arrow-right"></i> Logout
           </button>
         </div>
       </aside>
 
-      {/* Main Admin Workspace */}
+      {/* Main Content Workspace */}
       <div className="flex-grow-1 d-flex flex-column min-w-0">
-        {/* Persistent Top Admin Header Bar */}
-        <header className="bg-white border-bottom px-4 py-3 d-flex flex-wrap justify-content-between align-items-center gap-2 sticky-top">
-          <div>
-            <h5 className="fw-bold text-dark mb-0">
-              {activeTab === 'overview' && 'Platform Overview & Telemetry'}
-              {activeTab === 'users' && 'User Account Management'}
-              {activeTab === 'jobs' && 'Platform Job Catalog'}
-              {activeTab === 'questions' && 'Interview Question Bank'}
-            </h5>
-            <small className="text-muted">Administrator Control Center</small>
-          </div>
-          <div className="d-flex align-items-center gap-2">
+        {/* Top Admin Header Bar */}
+        <header
+          className="bg-white px-4 py-3 d-flex flex-wrap align-items-center justify-content-between gap-3 sticky-top"
+          style={{ borderBottom: '1px solid #E2E8F0', zIndex: 1020 }}
+        >
+          <div className="d-flex align-items-center gap-3">
             <button
               type="button"
-              className="btn btn-sm text-white fw-semibold d-inline-flex align-items-center gap-2 px-3 py-2"
-              style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
-              onClick={loadAllData}
+              className="btn btn-outline-secondary btn-sm d-lg-none"
+              onClick={() => setMobileMenuOpen(true)}
             >
-              <i className="bi bi-arrow-clockwise"></i> Refresh Data
+              <i className="bi bi-list fs-5"></i>
             </button>
-            {/* Responsive Sign Out Button (Visible Only on Mobile/Tablet < 992px) */}
+            <div>
+              <h4 className="fw-bold text-dark mb-0">
+                {activeTab === 'overview' && 'Dashboard'}
+                {activeTab === 'users' && 'User Management'}
+                {activeTab === 'jobs' && 'Job Catalog Management'}
+                {activeTab === 'questions' && 'Interview Question Bank'}
+              </h4>
+              <p className="text-muted small mb-0">
+                {activeTab === 'overview' && 'Overview of platform performance, AI usage, and system health'}
+                {activeTab === 'users' && 'Manage registered accounts, roles, and platform access'}
+                {activeTab === 'jobs' && 'Curate, publish, and manage active job postings for candidates'}
+                {activeTab === 'questions' && 'Curate Technical, HR, and Behavioral prompts for AI mock interviews'}
+              </p>
+            </div>
+          </div>
+
+          <div className="d-flex align-items-center gap-2">
+            <span
+              className="badge d-none sm-inline-flex align-items-center gap-1 px-3 py-2 rounded-pill"
+              style={{
+                backgroundColor: '#EEF2FF',
+                color: '#4F46E5',
+                fontWeight: 600,
+                fontSize: '12px',
+              }}
+            >
+              <i className="bi bi-cpu"></i>
+              {health.ai_provider || 'AI Engine Ready'}
+            </span>
             <button
               type="button"
-              className="btn btn-sm btn-outline-danger fw-semibold d-inline-flex d-lg-none align-items-center gap-2 px-3 py-2"
-              style={{ borderRadius: '8px' }}
-              onClick={handleSignOut}
+              onClick={fetchAllAdminData}
+              className="btn btn-light border btn-sm px-3 py-2 d-inline-flex align-items-center gap-2 fw-medium"
+              style={{ borderRadius: '10px' }}
+              disabled={loading}
             >
-              <i className="bi bi-box-arrow-right"></i> Sign Out
+              <i className={`bi bi-arrow-clockwise ${loading ? 'spin' : ''}`}></i>
+              Refresh
             </button>
           </div>
         </header>
 
-        {/* Mobile/Tablet Tab Switcher */}
-        <div className="d-flex d-lg-none gap-2 overflow-auto bg-white border-bottom px-4 py-2">
-          <button
-            className={`btn btn-sm ${
-              activeTab === 'overview' ? 'text-white' : 'btn-outline-secondary'
-            }`}
-            style={{ backgroundColor: activeTab === 'overview' ? '#4F46E5' : undefined }}
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button
-            className={`btn btn-sm ${
-              activeTab === 'users' ? 'text-white' : 'btn-outline-secondary'
-            }`}
-            style={{ backgroundColor: activeTab === 'users' ? '#4F46E5' : undefined }}
-            onClick={() => setActiveTab('users')}
-          >
-            Users ({users.length})
-          </button>
-          <button
-            className={`btn btn-sm ${
-              activeTab === 'jobs' ? 'text-white' : 'btn-outline-secondary'
-            }`}
-            style={{ backgroundColor: activeTab === 'jobs' ? '#4F46E5' : undefined }}
-            onClick={() => setActiveTab('jobs')}
-          >
-            Jobs ({jobs.length})
-          </button>
-          <button
-            className={`btn btn-sm ${
-              activeTab === 'questions' ? 'text-white' : 'btn-outline-secondary'
-            }`}
-            style={{ backgroundColor: activeTab === 'questions' ? '#4F46E5' : undefined }}
-            onClick={() => setActiveTab('questions')}
-          >
-            Questions ({questions.length})
-          </button>
-        </div>
-
-        {/* Main Content Body */}
+        {/* Main Workspace Body */}
         <main className="p-4 flex-grow-1">
-          {error && (
-            <div className="alert alert-danger alert-dismissible fade show rounded-3" role="alert">
-              <i className="bi bi-exclamation-triangle-fill me-2"></i>
-              {error}
-              <button type="button" className="btn-close" onClick={() => setError('')}></button>
+          {loading && !overview ? (
+            <div className="d-flex flex-column align-items-center justify-content-center py-5">
+              <div className="spinner-border text-primary mb-3" role="status"></div>
+              <p className="text-muted small">Loading CareerAI administrative telemetry...</p>
             </div>
-          )}
-
-          {successMsg && (
-            <div className="alert alert-success fade show rounded-3" role="alert">
-              <i className="bi bi-check-circle-fill me-2"></i>
-              {successMsg}
-            </div>
-          )}
-
-          {/* TAB 1: OVERVIEW & SYSTEM HEALTH */}
-          {activeTab === 'overview' && (
+          ) : (
             <>
-              {/* Welcome Banner Card */}
-              <div className="card bg-white p-4 mb-4" style={cardStyle}>
-                <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
-                  <div className="d-flex align-items-center gap-3">
-                    <div
-                      className="d-inline-flex align-items-center justify-content-center rounded-circle flex-shrink-0"
-                      style={{
-                        width: '54px',
-                        height: '54px',
-                        backgroundColor: '#EEF2FF',
-                        color: '#4F46E5',
-                      }}
-                    >
-                      <i className="bi bi-shield-check fs-3"></i>
-                    </div>
-                    <div>
-                      <h4 className="fw-bold text-dark mb-1">
-                        Welcome back, {user?.username || 'Administrator'}!
-                      </h4>
-                      <p className="text-muted small mb-0">
-                        Monitor platform metrics, manage registered accounts, curate job listings,
-                        and maintain the AI interview question bank.
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className="badge bg-success-subtle text-success rounded-pill px-3 py-2 align-self-start align-self-md-center"
-                    style={{ fontSize: '12px' }}
-                  >
-                    <i className="bi bi-circle-fill me-1" style={{ fontSize: '8px' }}></i>
-                    {health.database || 'System Healthy'}
-                  </span>
-                </div>
-              </div>
-
-              {/* 4-Card KPI Strip */}
-              <div className="row g-3 mb-4">
-                <div className="col-md-3 col-sm-6">
-                  <div className="card bg-white h-100 p-3" style={cardStyle}>
-                    <div className="d-flex justify-content-between align-items-start mb-3">
+              {/* ==================== TAB 1: DASHBOARD OVERVIEW ==================== */}
+              {activeTab === 'overview' && (
+                <div>
+                  {/* 4 KPI Metric Cards */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-12 col-sm-6 col-xl-3">
                       <div
-                        className="d-inline-flex align-items-center justify-content-center rounded-3"
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          backgroundColor: '#EEF2FF',
-                          color: '#4F46E5',
-                        }}
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
                       >
-                        <i className="bi bi-people-fill fs-5"></i>
-                      </div>
-                      <span
-                        className="badge rounded-pill"
-                        style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}
-                      >
-                        +{kpis.new_users_week || 0} this week
-                      </span>
-                    </div>
-                    <div className="text-muted small fw-semibold mb-1">Registered Users</div>
-                    <h3 className="fw-bold text-dark mb-1">{kpis.total_users ?? users.length}</h3>
-                    <small className="text-success fw-medium">
-                      <i className="bi bi-check-circle me-1"></i>
-                      {kpis.active_users ?? users.filter((u) => u.is_active).length} active accounts
-                    </small>
-                  </div>
-                </div>
-
-                <div className="col-md-3 col-sm-6">
-                  <div className="card bg-white h-100 p-3" style={cardStyle}>
-                    <div className="d-flex justify-content-between align-items-start mb-3">
-                      <div
-                        className="d-inline-flex align-items-center justify-content-center rounded-3"
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          backgroundColor: '#ECFDF5',
-                          color: '#10B981',
-                        }}
-                      >
-                        <i className="bi bi-file-earmark-check-fill fs-5"></i>
-                      </div>
-                      <span className="badge bg-success-subtle text-success rounded-pill">
-                        ATS Engine
-                      </span>
-                    </div>
-                    <div className="text-muted small fw-semibold mb-1">Resumes Analyzed</div>
-                    <h3 className="fw-bold text-dark mb-1">{kpis.total_resumes || 0}</h3>
-                    <small className="text-muted">Avg ATS Score: {kpis.avg_ats_score || 0}%</small>
-                  </div>
-                </div>
-
-                <div className="col-md-3 col-sm-6">
-                  <div className="card bg-white h-100 p-3" style={cardStyle}>
-                    <div className="d-flex justify-content-between align-items-start mb-3">
-                      <div
-                        className="d-inline-flex align-items-center justify-content-center rounded-3"
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          backgroundColor: '#EFF6FF',
-                          color: '#2563EB',
-                        }}
-                      >
-                        <i className="bi bi-briefcase-fill fs-5"></i>
-                      </div>
-                      <span className="badge bg-primary-subtle text-primary rounded-pill">
-                        Job Board
-                      </span>
-                    </div>
-                    <div className="text-muted small fw-semibold mb-1">Active Job Listings</div>
-                    <h3 className="fw-bold text-dark mb-1">{kpis.active_jobs ?? jobs.length}</h3>
-                    <small className="text-muted">
-                      {kpis.total_applications || 0} candidate applications
-                    </small>
-                  </div>
-                </div>
-
-                <div className="col-md-3 col-sm-6">
-                  <div className="card bg-white h-100 p-3" style={cardStyle}>
-                    <div className="d-flex justify-content-between align-items-start mb-3">
-                      <div
-                        className="d-inline-flex align-items-center justify-content-center rounded-3"
-                        style={{
-                          width: '42px',
-                          height: '42px',
-                          backgroundColor: '#FFFBEB',
-                          color: '#F59E0B',
-                        }}
-                      >
-                        <i className="bi bi-mic-fill fs-5"></i>
-                      </div>
-                      <span className="badge bg-warning-subtle text-warning-emphasis rounded-pill">
-                        AI Coach
-                      </span>
-                    </div>
-                    <div className="text-muted small fw-semibold mb-1">Mock Interviews</div>
-                    <h3 className="fw-bold text-dark mb-1">{kpis.completed_sessions || 0}</h3>
-                    <small className="text-muted">
-                      Avg Score: {kpis.avg_interview_score || 0} / 100
-                    </small>
-                  </div>
-                </div>
-              </div>
-
-              {/* Charts & System Health Row */}
-              <div className="row g-4 mb-4">
-                <div className="col-lg-5">
-                  <div className="card bg-white h-100 p-4" style={cardStyle}>
-                    <div className="d-flex justify-content-between align-items-center mb-3">
-                      <h5 className="fw-bold text-dark mb-0">Application Funnel Distribution</h5>
-                      <span className="text-muted small">Pipeline Stages</span>
-                    </div>
-                    {(overview?.charts?.application_statuses || []).length > 0 ? (
-                      <Bar
-                        data={applicationChartData}
-                        options={{ responsive: true, plugins: { legend: { display: false } } }}
-                      />
-                    ) : (
-                      <div className="text-center py-5 my-auto">
-                        <div
-                          className="d-inline-flex align-items-center justify-content-center rounded-circle bg-light text-muted mb-2"
-                          style={{ width: '48px', height: '48px' }}
-                        >
-                          <i className="bi bi-bar-chart fs-5"></i>
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                          <div
+                            className="rounded-3 d-flex align-items-center justify-content-center"
+                            style={{ width: '42px', height: '42px', backgroundColor: '#EEF2FF', color: '#4F46E5' }}
+                          >
+                            <i className="bi bi-people fs-5"></i>
+                          </div>
+                          <span className="text-muted small fw-medium">Total Users</span>
                         </div>
-                        <p className="text-muted small mb-0">No application data recorded yet.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="col-lg-3">
-                  <div className="card bg-white h-100 p-4" style={cardStyle}>
-                    <h5 className="fw-bold text-dark mb-3">Question Bank Mix</h5>
-                    {(overview?.charts?.question_categories || []).length > 0 ? (
-                      <Doughnut data={questionChartData} />
-                    ) : (
-                      <div className="text-center py-5 my-auto">
-                        <div
-                          className="d-inline-flex align-items-center justify-content-center rounded-circle bg-light text-muted mb-2"
-                          style={{ width: '48px', height: '48px' }}
-                        >
-                          <i className="bi bi-pie-chart fs-5"></i>
+                        <div className="fs-2 fw-bold text-dark mb-1">{kpis.total_users ?? 0}</div>
+                        <div className="small" style={{ color: '#10B981' }}>
+                          <i className="bi bi-arrow-up-short"></i>
+                          {kpis.active_users ?? 0} active · +{kpis.new_users_week ?? 0} this week
                         </div>
-                        <p className="text-muted small mb-0">No questions seeded yet.</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="col-lg-4">
-                  <div className="card bg-white h-100 p-4" style={cardStyle}>
-                    <h5 className="fw-bold text-dark mb-3 d-flex align-items-center">
-                      <i className="bi bi-activity text-success me-2"></i>System Health Monitor
-                    </h5>
-                    <ul className="list-group list-group-flush">
-                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                        <span className="text-muted small">Database Status</span>
-                        <span
-                          className={`badge rounded-pill ${
-                            health.database === 'Healthy' || !health.database
-                              ? 'bg-success-subtle text-success'
-                              : 'bg-danger-subtle text-danger'
-                          }`}
-                        >
-                          {health.database || 'Healthy'}
-                        </span>
-                      </li>
-                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                        <span className="text-muted small">Storage Engine</span>
-                        <span className="fw-semibold small text-dark">
-                          {health.database_engine || 'SQLite / PostgreSQL'}
-                        </span>
-                      </li>
-                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                        <span className="text-muted small">Active AI Engine</span>
-                        <span
-                          className="badge rounded-pill"
-                          style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}
-                        >
-                          {health.ai_provider || 'Groq / LLM Active'}
-                        </span>
-                      </li>
-                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 py-2">
-                        <span className="text-muted small">Fallback Evaluator</span>
-                        <span className="text-success small fw-semibold">Standby Ready</span>
-                      </li>
-                      <li className="list-group-item d-flex justify-content-between align-items-center px-0 py-2 border-bottom-0">
-                        <span className="text-muted small">Runtime Stack</span>
-                        <span className="small text-muted">
-                          Python {health.python_version || ''} / Django{' '}
-                          {health.django_version || ''}
-                        </span>
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              {/* Admin Quick-Action Cards */}
-              <div className="row g-3">
-                <div className="col-md-4">
-                  <div
-                    className="card bg-white p-4 h-100"
-                    style={{ ...cardStyle, cursor: 'pointer' }}
-                    onClick={() => setActiveTab('users')}
-                  >
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span className="fw-bold text-dark">Manage Platform Users</span>
-                      <i className="bi bi-arrow-right" style={{ color: '#4F46E5' }}></i>
-                    </div>
-                    <p className="text-muted small mb-0">
-                      Review registered candidates, assign admin roles, or suspend accounts.
-                    </p>
-                  </div>
-                </div>
-                <div className="col-md-4">
-                  <div
-                    className="card bg-white p-4 h-100"
-                    style={{ ...cardStyle, cursor: 'pointer' }}
-                    onClick={() => setActiveTab('jobs')}
-                  >
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span className="fw-bold text-dark">Curate Job Board</span>
-                      <i className="bi bi-arrow-right" style={{ color: '#4F46E5' }}></i>
-                    </div>
-                    <p className="text-muted small mb-0">
-                      Publish new roles with required skill tags for AI job matching.
-                    </p>
-                  </div>
-                </div>
-                <div className="col-md-4">
-                  <div
-                    className="card bg-white p-4 h-100"
-                    style={{ ...cardStyle, cursor: 'pointer' }}
-                    onClick={() => setActiveTab('questions')}
-                  >
-                    <div className="d-flex justify-content-between align-items-center mb-2">
-                      <span className="fw-bold text-dark">Maintain Question Bank</span>
-                      <i className="bi bi-arrow-right" style={{ color: '#4F46E5' }}></i>
-                    </div>
-                    <p className="text-muted small mb-0">
-                      Add technical, behavioral, and project-based prompts for mock interviews.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* TAB 2: USER MANAGEMENT */}
-          {activeTab === 'users' && (
-            <div className="card bg-white p-4" style={cardStyle}>
-              <div className="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
-                <h5 className="fw-bold text-dark mb-0">Platform Users</h5>
-                <div className="d-flex flex-wrap gap-2">
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    style={{ width: '240px' }}
-                    placeholder="Search by email or name..."
-                    value={userSearch}
-                    onChange={(e) => setUserSearch(e.target.value)}
-                  />
-                  <select
-                    className="form-select form-select-sm"
-                    style={{ width: '160px' }}
-                    value={userRoleFilter}
-                    onChange={(e) => setUserRoleFilter(e.target.value)}
-                  >
-                    <option value="">All Roles</option>
-                    <option value="candidate">Candidates</option>
-                    <option value="admin">Administrators</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="table-responsive">
-                <table className="table table-hover align-middle mb-0">
-                  <thead className="table-light">
-                    <tr>
-                      <th>User</th>
-                      <th>Role</th>
-                      <th>Status</th>
-                      <th>Activity</th>
-                      <th>Joined</th>
-                      <th className="text-end">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map((u) => (
-                      <tr key={u.id}>
-                        <td>
-                          <div className="fw-semibold text-dark">{u.full_name || 'User'}</div>
-                          <small className="text-muted">{u.email}</small>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge rounded-pill ${
-                              u.role === 'admin' ? 'bg-dark' : 'bg-info-subtle text-info-emphasis'
-                            }`}
-                          >
-                            {u.role.toUpperCase()}
-                          </span>
-                        </td>
-                        <td>
-                          <span
-                            className={`badge rounded-pill ${
-                              u.is_active
-                                ? 'bg-success-subtle text-success'
-                                : 'bg-secondary-subtle text-secondary'
-                            }`}
-                          >
-                            {u.is_active ? 'Active' : 'Suspended'}
-                          </span>
-                        </td>
-                        <td>
-                          <span className="badge bg-light text-dark border me-1">
-                            {u.resumes_count || 0} Resumes
-                          </span>
-                          <span className="badge bg-light text-dark border me-1">
-                            {u.applications_count || 0} Apps
-                          </span>
-                          <span className="badge bg-light text-dark border">
-                            {u.interviews_count || 0} Interviews
-                          </span>
-                        </td>
-                        <td className="small text-muted">
-                          {u.date_joined ? new Date(u.date_joined).toLocaleDateString() : '—'}
-                        </td>
-                        <td className="text-end">
-                          <button
-                            className="btn btn-sm btn-outline-secondary me-1"
-                            onClick={() => handleToggleUserRole(u)}
-                          >
-                            {u.role === 'admin' ? 'Make Candidate' : 'Make Admin'}
-                          </button>
-                          <button
-                            className={`btn btn-sm me-1 ${
-                              u.is_active ? 'btn-outline-warning' : 'btn-outline-success'
-                            }`}
-                            onClick={() => handleToggleUserStatus(u)}
-                          >
-                            {u.is_active ? 'Suspend' : 'Activate'}
-                          </button>
-                          <button
-                            className="btn btn-sm btn-outline-danger"
-                            onClick={() => handleDeleteUser(u)}
-                          >
-                            <i className="bi bi-trash"></i>
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: JOB MANAGEMENT */}
-          {activeTab === 'jobs' && (
-            <div className="row g-4">
-              <div className="col-lg-4">
-                <div className="card bg-white p-4" style={cardStyle}>
-                  <h5 className="fw-bold text-dark mb-3">Post New Job</h5>
-                  <form onSubmit={handleCreateJob}>
-                    <div className="mb-2">
-                      <label className="form-label small fw-semibold">Job Title</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        required
-                        value={newJob.title}
-                        onChange={(e) => setNewJob({ ...newJob, title: e.target.value })}
-                      />
-                    </div>
-                    <div className="mb-2">
-                      <label className="form-label small fw-semibold">Company</label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        required
-                        value={newJob.company}
-                        onChange={(e) => setNewJob({ ...newJob, company: e.target.value })}
-                      />
-                    </div>
-                    <div className="row g-2 mb-2">
-                      <div className="col-6">
-                        <label className="form-label small fw-semibold">Location</label>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={newJob.location}
-                          onChange={(e) => setNewJob({ ...newJob, location: e.target.value })}
-                        />
-                      </div>
-                      <div className="col-6">
-                        <label className="form-label small fw-semibold">Salary (LPA)</label>
-                        <input
-                          type="text"
-                          className="form-control form-control-sm"
-                          value={newJob.salary_range}
-                          onChange={(e) => setNewJob({ ...newJob, salary_range: e.target.value })}
-                        />
                       </div>
                     </div>
-                    <div className="mb-2">
-                      <label className="form-label small fw-semibold">
-                        Required Skills (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="Python, Django, React, SQL"
-                        required
-                        value={newJob.required_skills}
-                        onChange={(e) =>
-                          setNewJob({ ...newJob, required_skills: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label small fw-semibold">Description</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows="3"
-                        required
-                        value={newJob.description}
-                        onChange={(e) => setNewJob({ ...newJob, description: e.target.value })}
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="btn btn-sm w-100 text-white fw-semibold py-2"
-                      style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
-                    >
-                      <i className="bi bi-plus-circle me-1"></i> Publish Job
-                    </button>
-                  </form>
-                </div>
-              </div>
 
-              <div className="col-lg-8">
-                <div className="card bg-white p-4" style={cardStyle}>
-                  <h5 className="fw-bold text-dark mb-3">All Job Listings</h5>
-                  <div className="table-responsive">
-                    <table className="table table-hover align-middle mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th>Role & Company</th>
-                          <th>Skills</th>
-                          <th>Status</th>
-                          <th className="text-end">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {jobs.map((job) => (
-                          <tr key={job.id}>
-                            <td>
-                              <div className="fw-semibold text-dark">{job.title}</div>
-                              <small className="text-muted">
-                                {job.company} • {job.location} ({job.salary_range})
-                              </small>
-                            </td>
-                            <td>
-                              {(job.required_skills || []).slice(0, 4).map((skill, idx) => (
-                                <span key={idx} className="badge bg-light text-dark border me-1">
-                                  {skill}
-                                </span>
-                              ))}
-                            </td>
-                            <td>
+                    <div className="col-12 col-sm-6 col-xl-3">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                          <div
+                            className="rounded-3 d-flex align-items-center justify-content-center"
+                            style={{ width: '42px', height: '42px', backgroundColor: '#ECFDF5', color: '#10B981' }}
+                          >
+                            <i className="bi bi-file-earmark-check fs-5"></i>
+                          </div>
+                          <span className="text-muted small fw-medium">Resumes & Avg ATS</span>
+                        </div>
+                        <div className="fs-2 fw-bold text-dark mb-1">{kpis.total_resumes ?? 0}</div>
+                        <div className="small text-muted">
+                          Platform Avg ATS Score:{' '}
+                          <span className="fw-semibold text-dark">{kpis.avg_ats_score ?? 0}%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-sm-6 col-xl-3">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                          <div
+                            className="rounded-3 d-flex align-items-center justify-content-center"
+                            style={{ width: '42px', height: '42px', backgroundColor: '#FFFBEB', color: '#F59E0B' }}
+                          >
+                            <i className="bi bi-briefcase fs-5"></i>
+                          </div>
+                          <span className="text-muted small fw-medium">Active Job Listings</span>
+                        </div>
+                        <div className="fs-2 fw-bold text-dark mb-1">
+                          {kpis.active_jobs ?? 0}
+                          <span className="fs-6 fw-normal text-muted"> / {kpis.total_jobs ?? 0}</span>
+                        </div>
+                        <div className="small text-muted">
+                          {kpis.total_applications ?? 0} candidate applications tracked
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-sm-6 col-xl-3">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex align-items-center gap-3 mb-3">
+                          <div
+                            className="rounded-3 d-flex align-items-center justify-content-center"
+                            style={{ width: '42px', height: '42px', backgroundColor: '#F3E8FF', color: '#7C3AED' }}
+                          >
+                            <i className="bi bi-mic fs-5"></i>
+                          </div>
+                          <span className="text-muted small fw-medium">AI Interview Sessions</span>
+                        </div>
+                        <div className="fs-2 fw-bold text-dark mb-1">{kpis.total_sessions ?? 0}</div>
+                        <div className="small text-muted">
+                          {kpis.completed_sessions ?? 0} completed · Avg Score{' '}
+                          <span className="fw-semibold text-dark">{kpis.avg_interview_score ?? 0}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Charts Row */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-12 col-lg-7">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <div>
+                            <h6 className="fw-bold text-dark mb-0">Application Pipeline Activity</h6>
+                            <span className="text-muted small">
+                              Distribution of candidate job tracking stages
+                            </span>
+                          </div>
+                          <span className="badge bg-light text-dark border">Live Data</span>
+                        </div>
+                        <div style={{ height: '260px' }}>
+                          <Bar
+                            data={applicationBarData}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              plugins: { legend: { display: false } },
+                              scales: {
+                                y: { beginAtZero: true, ticks: { precision: 0 } },
+                                x: { grid: { display: false } },
+                              },
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-12 col-lg-5">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <div>
+                            <h6 className="fw-bold text-dark mb-0">Question Bank Mix</h6>
+                            <span className="text-muted small">
+                              {kpis.total_questions ?? questions.length} curated interview prompts
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-link text-decoration-none fw-semibold p-0"
+                            style={{ color: '#4F46E5' }}
+                            onClick={() => setActiveTab('questions')}
+                          >
+                            Manage →
+                          </button>
+                        </div>
+                        <div style={{ height: '260px' }} className="d-flex align-items-center justify-content-center">
+                          <Doughnut
+                            data={questionDoughnutData}
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              cutout: '66%',
+                              plugins: {
+                                legend: { position: 'bottom', labels: { boxWidth: 12, padding: 14 } },
+                              },
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom Row: System Status + Recent Users + Quick Admin Controls */}
+                  <div className="row g-3">
+                    {/* Recent Users Widget */}
+                    <div className="col-12 col-lg-5">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="d-flex justify-content-between align-items-center mb-3">
+                          <div>
+                            <h6 className="fw-bold text-dark mb-0">Recent Users</h6>
+                            <span className="text-muted small">Latest accounts registered on CareerAI</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-link text-decoration-none fw-semibold p-0"
+                            style={{ color: '#4F46E5' }}
+                            onClick={() => setActiveTab('users')}
+                          >
+                            View All
+                          </button>
+                        </div>
+                        <div className="d-flex flex-column gap-3">
+                          {users.slice(0, 5).map((u) => (
+                            <div
+                              key={u.id}
+                              className="d-flex align-items-center justify-content-between pb-2 border-bottom"
+                            >
+                              <div className="d-flex align-items-center gap-2 min-w-0">
+                                <div
+                                  className="rounded-circle d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                                  style={{
+                                    width: '36px',
+                                    height: '36px',
+                                    backgroundColor: '#EEF2FF',
+                                    color: '#4F46E5',
+                                    fontSize: '12px',
+                                  }}
+                                >
+                                  {getInitials(u.full_name || u.email)}
+                                </div>
+                                <div className="text-truncate">
+                                  <div className="fw-semibold text-dark small text-truncate">
+                                    {u.full_name || u.username}
+                                  </div>
+                                  <div className="text-muted text-truncate" style={{ fontSize: '11.5px' }}>
+                                    {u.email}
+                                  </div>
+                                </div>
+                              </div>
                               <span
-                                className={`badge rounded-pill ${
-                                  job.is_active
-                                    ? 'bg-success-subtle text-success'
-                                    : 'bg-secondary-subtle text-secondary'
-                                }`}
+                                className="badge rounded-pill text-capitalize"
+                                style={{
+                                  backgroundColor: u.role === 'admin' ? '#EEF2FF' : '#F1F5F9',
+                                  color: u.role === 'admin' ? '#4F46E5' : '#475569',
+                                  fontSize: '11px',
+                                }}
                               >
-                                {job.is_active ? 'Active' : 'Archived'}
+                                {u.role}
                               </span>
-                            </td>
-                            <td className="text-end">
-                              <button
-                                className="btn btn-sm btn-outline-secondary me-1"
-                                onClick={() => handleToggleJobActive(job)}
-                              >
-                                {job.is_active ? 'Archive' : 'Activate'}
-                              </button>
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => handleDeleteJob(job)}
-                              >
-                                <i className="bi bi-trash"></i>
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* System Status & Diagnostics Widget */}
+                    <div className="col-12 col-lg-4">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="mb-3">
+                          <h6 className="fw-bold text-dark mb-0">System Status</h6>
+                          <span className="small fw-medium" style={{ color: '#10B981' }}>
+                            All core services operational
+                          </span>
+                        </div>
+                        <div className="d-flex flex-column gap-3 small">
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="text-muted">Web Application (Django REST)</span>
+                            <span className="fw-semibold" style={{ color: '#10B981' }}>
+                              ● Operational
+                            </span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="text-muted">Database ({health.database_engine || 'SQLite3'})</span>
+                            <span className="fw-semibold" style={{ color: '#10B981' }}>
+                              ● {health.database || 'Healthy'}
+                            </span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="text-muted">AI Evaluation Engine</span>
+                            <span className="fw-semibold" style={{ color: '#10B981' }}>
+                              ● {health.ai_provider || 'Active'}
+                            </span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center">
+                            <span className="text-muted">Heuristic Fallback Engine</span>
+                            <span className="fw-semibold" style={{ color: '#10B981' }}>
+                              ● Standby Ready
+                            </span>
+                          </div>
+                          <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+                            <span className="text-muted">Runtime Environment</span>
+                            <span className="fw-semibold text-dark">
+                              Python {health.python_version || '3.x'} · Django {health.django_version || '4.2'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Admin Quick Actions Widget */}
+                    <div className="col-12 col-lg-3">
+                      <div
+                        className="card bg-white p-4 h-100"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <h6 className="fw-bold text-dark mb-1">Admin Controls</h6>
+                        <p className="text-muted small mb-3">Direct catalog & access actions</p>
+                        <div className="d-flex flex-column gap-2">
+                          <button
+                            type="button"
+                            className="btn text-white fw-semibold d-flex align-items-center justify-content-center gap-2 py-2"
+                            style={{ backgroundColor: '#4F46E5', borderRadius: '10px', fontSize: '13.5px' }}
+                            onClick={() => {
+                              setActiveTab('jobs');
+                              openCreateJobModal();
+                            }}
+                          >
+                            <i className="bi bi-plus-circle"></i> Post New Job
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-outline-primary fw-semibold d-flex align-items-center justify-content-center gap-2 py-2"
+                            style={{ borderRadius: '10px', fontSize: '13.5px' }}
+                            onClick={() => {
+                              setActiveTab('questions');
+                              openCreateQuestionModal();
+                            }}
+                          >
+                            <i className="bi bi-plus-square"></i> Add Interview Question
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-light border fw-semibold d-flex align-items-center justify-content-center gap-2 py-2"
+                            style={{ borderRadius: '10px', fontSize: '13.5px' }}
+                            onClick={() => setActiveTab('users')}
+                          >
+                            <i className="bi bi-person-gear"></i> Manage User Roles
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          )}
+              )}
 
-          {/* TAB 4: QUESTION BANK MANAGEMENT */}
-          {activeTab === 'questions' && (
-            <div className="row g-4">
-              <div className="col-lg-4">
-                <div className="card bg-white p-4" style={cardStyle}>
-                  <h5 className="fw-bold text-dark mb-3">Add Interview Question</h5>
-                  <form onSubmit={handleCreateQuestion}>
-                    <div className="row g-2 mb-2">
-                      <div className="col-6">
-                        <label className="form-label small fw-semibold">Category</label>
+              {/* ==================== TAB 2: USER MANAGEMENT ==================== */}
+              {activeTab === 'users' && (
+                <div>
+                  {/* User KPI Strip */}
+                  <div className="row g-3 mb-4">
+                    <div className="col-6 col-lg-3">
+                      <div className="card bg-white p-3" style={{ borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                        <div className="text-muted small">Total Users</div>
+                        <div className="fs-3 fw-bold text-dark">{users.length}</div>
+                      </div>
+                    </div>
+                    <div className="col-6 col-lg-3">
+                      <div className="card bg-white p-3" style={{ borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                        <div className="text-muted small">Active Accounts</div>
+                        <div className="fs-3 fw-bold" style={{ color: '#10B981' }}>
+                          {users.filter((u) => u.is_active).length}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-6 col-lg-3">
+                      <div className="card bg-white p-3" style={{ borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                        <div className="text-muted small">Administrators</div>
+                        <div className="fs-3 fw-bold" style={{ color: '#4F46E5' }}>
+                          {users.filter((u) => u.role === 'admin').length}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="col-6 col-lg-3">
+                      <div className="card bg-white p-3" style={{ borderRadius: '14px', border: '1px solid #E2E8F0' }}>
+                        <div className="text-muted small">Suspended / Inactive</div>
+                        <div className="fs-3 fw-bold text-danger">
+                          {users.filter((u) => !u.is_active).length}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filters Bar */}
+                  <div
+                    className="card bg-white p-3 mb-4"
+                    style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                  >
+                    <div className="row g-2 align-items-center">
+                      <div className="col-12 col-md-5">
+                        <div className="input-group">
+                          <span className="input-group-text bg-white border-end-0 text-muted">
+                            <i className="bi bi-search"></i>
+                          </span>
+                          <input
+                            type="text"
+                            className="form-control border-start-0 ps-0"
+                            placeholder="Search users by name or email..."
+                            value={userSearch}
+                            onChange={(e) => setUserSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
                         <select
-                          className="form-select form-select-sm"
-                          value={newQuestion.category}
-                          onChange={(e) =>
-                            setNewQuestion({ ...newQuestion, category: e.target.value })
-                          }
+                          className="form-select"
+                          value={userStatusFilter}
+                          onChange={(e) => setUserStatusFilter(e.target.value)}
                         >
+                          <option value="all">Status: All Users</option>
+                          <option value="active">Active Only</option>
+                          <option value="inactive">Disabled / Inactive</option>
+                        </select>
+                      </div>
+                      <div className="col-6 col-md-2">
+                        <select
+                          className="form-select"
+                          value={userRoleFilter}
+                          onChange={(e) => setUserRoleFilter(e.target.value)}
+                        >
+                          <option value="all">Role: All</option>
+                          <option value="candidate">Candidate</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      <div className="col-12 col-md-2">
+                        <button
+                          type="button"
+                          className="btn btn-light border w-100"
+                          onClick={() => {
+                            setUserSearch('');
+                            setUserRoleFilter('all');
+                            setUserStatusFilter('all');
+                          }}
+                        >
+                          Clear Filters
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Users Table + Slide-Over Details Panel */}
+                  <div className="row g-3">
+                    <div className={selectedUser ? 'col-12 col-xl-8' : 'col-12'}>
+                      <div
+                        className="card bg-white overflow-hidden"
+                        style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                      >
+                        <div className="table-responsive">
+                          <table className="table table-hover align-middle mb-0">
+                            <thead style={{ backgroundColor: '#F8FAFC' }}>
+                              <tr className="text-muted small">
+                                <th className="ps-4 py-3">User</th>
+                                <th className="py-3">Role</th>
+                                <th className="py-3 text-center">Resumes</th>
+                                <th className="py-3 text-center">Apps</th>
+                                <th className="py-3 text-center">Interviews</th>
+                                <th className="py-3">Status</th>
+                                <th className="py-3 text-end pe-4">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {filteredUsers.length === 0 ? (
+                                <tr>
+                                  <td colSpan="7" className="text-center py-5 text-muted">
+                                    No users match your current filter criteria.
+                                  </td>
+                                </tr>
+                              ) : (
+                                filteredUsers.map((u) => {
+                                  const isSelf = u.email === user?.email;
+                                  return (
+                                    <tr key={u.id}>
+                                      <td className="ps-4 py-3">
+                                        <div className="d-flex align-items-center gap-2">
+                                          <div
+                                            className="rounded-circle d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                                            style={{
+                                              width: '36px',
+                                              height: '36px',
+                                              backgroundColor: '#EEF2FF',
+                                              color: '#4F46E5',
+                                              fontSize: '12px',
+                                            }}
+                                          >
+                                            {getInitials(u.full_name || u.email)}
+                                          </div>
+                                          <div>
+                                            <div className="fw-semibold text-dark small d-flex align-items-center gap-2">
+                                              {u.full_name || u.username}
+                                              {isSelf && (
+                                                <span
+                                                  className="badge rounded-pill"
+                                                  style={{
+                                                    backgroundColor: '#EEF2FF',
+                                                    color: '#4F46E5',
+                                                    fontSize: '10px',
+                                                  }}
+                                                >
+                                                  You
+                                                </span>
+                                              )}
+                                            </div>
+                                            <div className="text-muted" style={{ fontSize: '12px' }}>
+                                              {u.email}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      <td>
+                                        <select
+                                          className="form-select form-select-sm"
+                                          style={{ width: '115px', borderRadius: '8px' }}
+                                          value={u.role}
+                                          disabled={isSelf}
+                                          onChange={(e) => handleUserRoleChange(u, e.target.value)}
+                                        >
+                                          <option value="candidate">Candidate</option>
+                                          <option value="admin">Admin</option>
+                                        </select>
+                                      </td>
+                                      <td className="text-center fw-semibold small">{u.resumes_count ?? 0}</td>
+                                      <td className="text-center fw-semibold small">{u.applications_count ?? 0}</td>
+                                      <td className="text-center fw-semibold small">{u.interviews_count ?? 0}</td>
+                                      <td>
+                                        <span
+                                          className="badge rounded-pill px-2 py-1"
+                                          style={{
+                                            backgroundColor: u.is_active ? '#ECFDF5' : '#FEF2F2',
+                                            color: u.is_active ? '#10B981' : '#EF4444',
+                                            fontSize: '11px',
+                                          }}
+                                        >
+                                          ● {u.is_active ? 'Active' : 'Inactive'}
+                                        </span>
+                                      </td>
+                                      <td className="text-end pe-4">
+                                        <div className="d-inline-flex gap-1">
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-light border"
+                                            title="View User Details"
+                                            onClick={() => setSelectedUser(u)}
+                                          >
+                                            <i className="bi bi-eye"></i>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-light border"
+                                            disabled={isSelf}
+                                            title={u.is_active ? 'Disable User' : 'Enable User'}
+                                            onClick={() =>
+                                              setUserConfirmModal({
+                                                type: u.is_active ? 'disable' : 'enable',
+                                                target: u,
+                                              })
+                                            }
+                                          >
+                                            <i
+                                              className={`bi ${
+                                                u.is_active
+                                                  ? 'bi-slash-circle text-warning'
+                                                  : 'bi-check-circle text-success'
+                                              }`}
+                                            ></i>
+                                          </button>
+                                          <button
+                                            type="button"
+                                            className="btn btn-sm btn-light border text-danger"
+                                            disabled={isSelf}
+                                            title="Delete User"
+                                            onClick={() =>
+                                              setUserConfirmModal({ type: 'delete', target: u })
+                                            }
+                                          >
+                                            <i className="bi bi-trash"></i>
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Slide-Over User Details Card */}
+                    {selectedUser && (
+                      <div className="col-12 col-xl-4">
+                        <div
+                          className="card bg-white p-4"
+                          style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                        >
+                          <div className="d-flex justify-content-between align-items-center mb-3">
+                            <h6 className="fw-bold text-dark mb-0">User Details</h6>
+                            <button
+                              type="button"
+                              className="btn-close btn-sm"
+                              onClick={() => setSelectedUser(null)}
+                            ></button>
+                          </div>
+
+                          <div className="d-flex align-items-center gap-3 pb-3 mb-3 border-bottom">
+                            <div
+                              className="rounded-circle d-flex align-items-center justify-content-center fw-bold text-white"
+                              style={{
+                                width: '52px',
+                                height: '52px',
+                                backgroundColor: '#4F46E5',
+                                fontSize: '18px',
+                              }}
+                            >
+                              {getInitials(selectedUser.full_name || selectedUser.email)}
+                            </div>
+                            <div>
+                              <div className="fw-bold text-dark">
+                                {selectedUser.full_name || selectedUser.username}
+                              </div>
+                              <div className="text-muted small">{selectedUser.email}</div>
+                              <span
+                                className="badge rounded-pill mt-1"
+                                style={{
+                                  backgroundColor: selectedUser.is_active ? '#ECFDF5' : '#FEF2F2',
+                                  color: selectedUser.is_active ? '#10B981' : '#EF4444',
+                                  fontSize: '11px',
+                                }}
+                              >
+                                ● {selectedUser.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="d-flex flex-column gap-2 small mb-4">
+                            <div className="d-flex justify-content-between">
+                              <span className="text-muted">User ID</span>
+                              <span className="fw-semibold text-dark">USR-{selectedUser.id}</span>
+                            </div>
+                            <div className="d-flex justify-content-between">
+                              <span className="text-muted">Account Role</span>
+                              <span className="fw-semibold text-capitalize text-dark">
+                                {selectedUser.role}
+                              </span>
+                            </div>
+                            <div className="d-flex justify-content-between">
+                              <span className="text-muted">Registration Date</span>
+                              <span className="fw-semibold text-dark">
+                                {selectedUser.date_joined
+                                  ? new Date(selectedUser.date_joined).toLocaleDateString()
+                                  : 'N/A'}
+                              </span>
+                            </div>
+                            <div className="d-flex justify-content-between">
+                              <span className="text-muted">Last Login</span>
+                              <span className="fw-semibold text-dark">
+                                {selectedUser.last_login
+                                  ? new Date(selectedUser.last_login).toLocaleString()
+                                  : 'Never'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div
+                            className="p-3 rounded-3 mb-3"
+                            style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+                          >
+                            <div className="row text-center g-2">
+                              <div className="col-4">
+                                <div className="text-muted" style={{ fontSize: '11px' }}>
+                                  Resumes
+                                </div>
+                                <div className="fw-bold fs-5 text-dark">
+                                  {selectedUser.resumes_count ?? 0}
+                                </div>
+                              </div>
+                              <div className="col-4">
+                                <div className="text-muted" style={{ fontSize: '11px' }}>
+                                  Applications
+                                </div>
+                                <div className="fw-bold fs-5 text-dark">
+                                  {selectedUser.applications_count ?? 0}
+                                </div>
+                              </div>
+                              <div className="col-4">
+                                <div className="text-muted" style={{ fontSize: '11px' }}>
+                                  Interviews
+                                </div>
+                                <div className="fw-bold fs-5 text-dark">
+                                  {selectedUser.interviews_count ?? 0}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ==================== TAB 3: JOB CATALOG MANAGEMENT ==================== */}
+              {activeTab === 'jobs' && (
+                <div>
+                  {/* Toolbar */}
+                  <div
+                    className="card bg-white p-3 mb-4"
+                    style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                  >
+                    <div className="row g-2 align-items-center">
+                      <div className="col-12 col-md-5">
+                        <div className="input-group">
+                          <span className="input-group-text bg-white border-end-0 text-muted">
+                            <i className="bi bi-search"></i>
+                          </span>
+                          <input
+                            type="text"
+                            className="form-control border-start-0 ps-0"
+                            placeholder="Search job title, company, or location..."
+                            value={jobSearch}
+                            onChange={(e) => setJobSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <select
+                          className="form-select"
+                          value={jobStatusFilter}
+                          onChange={(e) => setJobStatusFilter(e.target.value)}
+                        >
+                          <option value="all">All Listings ({jobs.length})</option>
+                          <option value="active">Active Only</option>
+                          <option value="inactive">Archived / Hidden</option>
+                        </select>
+                      </div>
+                      <div className="col-6 col-md-4 text-end">
+                        <button
+                          type="button"
+                          className="btn text-white fw-semibold px-4"
+                          style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+                          onClick={openCreateJobModal}
+                        >
+                          <i className="bi bi-plus-lg me-1"></i> Add Job Posting
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Jobs Table */}
+                  <div
+                    className="card bg-white overflow-hidden"
+                    style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                  >
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead style={{ backgroundColor: '#F8FAFC' }}>
+                          <tr className="text-muted small">
+                            <th className="ps-4 py-3">Role & Company</th>
+                            <th className="py-3">Location & Type</th>
+                            <th className="py-3">Required Skills</th>
+                            <th className="py-3">Status</th>
+                            <th className="py-3 text-end pe-4">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredJobs.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="text-center py-5 text-muted">
+                                No job postings found. Click "Add Job Posting" to create one.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredJobs.map((job) => (
+                              <tr key={job.id}>
+                                <td className="ps-4 py-3">
+                                  <div className="fw-bold text-dark small">{job.title}</div>
+                                  <div className="text-muted" style={{ fontSize: '12px' }}>
+                                    {job.company} {job.salary_range ? `· ${job.salary_range}` : ''}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="small text-dark">{job.location}</div>
+                                  <span className="badge bg-light text-secondary border" style={{ fontSize: '11px' }}>
+                                    {job.job_type} · {job.experience_level}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div className="d-flex flex-wrap gap-1" style={{ maxWidth: '280px' }}>
+                                    {(job.required_skills || []).slice(0, 4).map((skill, idx) => (
+                                      <span
+                                        key={idx}
+                                        className="badge rounded-pill"
+                                        style={{
+                                          backgroundColor: '#EEF2FF',
+                                          color: '#4F46E5',
+                                          fontSize: '11px',
+                                        }}
+                                      >
+                                        {skill}
+                                      </span>
+                                    ))}
+                                    {(job.required_skills || []).length > 4 && (
+                                      <span className="badge bg-light text-muted border" style={{ fontSize: '11px' }}>
+                                        +{job.required_skills.length - 4}
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td>
+                                  <span
+                                    className="badge rounded-pill px-2 py-1"
+                                    style={{
+                                      backgroundColor: job.is_active ? '#ECFDF5' : '#F1F5F9',
+                                      color: job.is_active ? '#10B981' : '#64748B',
+                                      fontSize: '11px',
+                                    }}
+                                  >
+                                    ● {job.is_active ? 'Active' : 'Archived'}
+                                  </span>
+                                </td>
+                                <td className="text-end pe-4">
+                                  <div className="d-inline-flex gap-1">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-light border"
+                                      title="Edit Job"
+                                      onClick={() => openEditJobModal(job)}
+                                    >
+                                      <i className="bi bi-pencil"></i>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-light border"
+                                      title={job.is_active ? 'Archive Job' : 'Activate Job'}
+                                      onClick={() => handleToggleJobActive(job)}
+                                    >
+                                      <i
+                                        className={`bi ${
+                                          job.is_active ? 'bi-eye-slash text-warning' : 'bi-eye text-success'
+                                        }`}
+                                      ></i>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-light border text-danger"
+                                      title="Delete Job"
+                                      onClick={() => setJobDeleteTarget(job)}
+                                    >
+                                      <i className="bi bi-trash"></i>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ==================== TAB 4: QUESTION BANK MANAGEMENT ==================== */}
+              {activeTab === 'questions' && (
+                <div>
+                  {/* Toolbar */}
+                  <div
+                    className="card bg-white p-3 mb-4"
+                    style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                  >
+                    <div className="row g-2 align-items-center">
+                      <div className="col-12 col-md-5">
+                        <div className="input-group">
+                          <span className="input-group-text bg-white border-end-0 text-muted">
+                            <i className="bi bi-search"></i>
+                          </span>
+                          <input
+                            type="text"
+                            className="form-control border-start-0 ps-0"
+                            placeholder="Search question text or target role..."
+                            value={questionSearch}
+                            onChange={(e) => setQuestionSearch(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="col-6 col-md-3">
+                        <select
+                          className="form-select"
+                          value={questionCategoryFilter}
+                          onChange={(e) => setQuestionCategoryFilter(e.target.value)}
+                        >
+                          <option value="All">Category: All ({questions.length})</option>
                           <option value="Technical">Technical</option>
-                          <option value="HR">HR</option>
                           <option value="Behavioral">Behavioral</option>
+                          <option value="HR">HR</option>
                           <option value="Project-based">Project-based</option>
                         </select>
                       </div>
-                      <div className="col-6">
-                        <label className="form-label small fw-semibold">Difficulty</label>
-                        <select
-                          className="form-select form-select-sm"
-                          value={newQuestion.difficulty}
-                          onChange={(e) =>
-                            setNewQuestion({ ...newQuestion, difficulty: e.target.value })
-                          }
+                      <div className="col-6 col-md-4 text-end">
+                        <button
+                          type="button"
+                          className="btn text-white fw-semibold px-4"
+                          style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+                          onClick={openCreateQuestionModal}
                         >
-                          <option value="Easy">Easy</option>
-                          <option value="Medium">Medium</option>
-                          <option value="Hard">Hard</option>
-                        </select>
+                          <i className="bi bi-plus-lg me-1"></i> Add Question
+                        </button>
                       </div>
                     </div>
-                    <div className="mb-2">
-                      <label className="form-label small fw-semibold">Question Prompt</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows="3"
-                        required
-                        value={newQuestion.question_text}
-                        onChange={(e) =>
-                          setNewQuestion({ ...newQuestion, question_text: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="mb-2">
-                      <label className="form-label small fw-semibold">
-                        Ideal Talking Points (comma-separated)
-                      </label>
-                      <input
-                        type="text"
-                        className="form-control form-control-sm"
-                        placeholder="Scalability, Indexing, Caching"
-                        value={newQuestion.ideal_points}
-                        onChange={(e) =>
-                          setNewQuestion({ ...newQuestion, ideal_points: e.target.value })
-                        }
-                      />
-                    </div>
-                    <div className="mb-3">
-                      <label className="form-label small fw-semibold">Sample Benchmark Answer</label>
-                      <textarea
-                        className="form-control form-control-sm"
-                        rows="2"
-                        value={newQuestion.sample_answer}
-                        onChange={(e) =>
-                          setNewQuestion({ ...newQuestion, sample_answer: e.target.value })
-                        }
-                      />
-                    </div>
-                    <button
-                      type="submit"
-                      className="btn btn-sm w-100 text-white fw-semibold py-2"
-                      style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
-                    >
-                      <i className="bi bi-plus-circle me-1"></i> Add Question
-                    </button>
-                  </form>
-                </div>
-              </div>
+                  </div>
 
-              <div className="col-lg-8">
-                <div className="card bg-white p-4" style={cardStyle}>
-                  <h5 className="fw-bold text-dark mb-3">Question Bank Repository</h5>
-                  <div className="table-responsive">
-                    <table className="table table-hover align-middle mb-0">
-                      <thead className="table-light">
-                        <tr>
-                          <th>Category</th>
-                          <th>Difficulty</th>
-                          <th>Question</th>
-                          <th className="text-end">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {questions.map((q) => (
-                          <tr key={q.id}>
-                            <td>
-                              <span
-                                className="badge rounded-pill"
-                                style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}
-                              >
-                                {q.category}
-                              </span>
-                            </td>
-                            <td>
-                              <span
-                                className={`badge rounded-pill ${
-                                  q.difficulty === 'Hard'
-                                    ? 'bg-danger-subtle text-danger'
-                                    : q.difficulty === 'Medium'
-                                    ? 'bg-warning-subtle text-warning-emphasis'
-                                    : 'bg-success-subtle text-success'
-                                }`}
-                              >
-                                {q.difficulty}
-                              </span>
-                            </td>
-                            <td className="small text-dark">{q.question_text}</td>
-                            <td className="text-end">
-                              <button
-                                className="btn btn-sm btn-outline-danger"
-                                onClick={() => handleDeleteQuestion(q)}
-                              >
-                                <i className="bi bi-trash"></i>
-                              </button>
-                            </td>
+                  {/* Questions Table */}
+                  <div
+                    className="card bg-white overflow-hidden"
+                    style={{ borderRadius: '16px', border: '1px solid #E2E8F0' }}
+                  >
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0">
+                        <thead style={{ backgroundColor: '#F8FAFC' }}>
+                          <tr className="text-muted small">
+                            <th className="ps-4 py-3">Interview Question</th>
+                            <th className="py-3">Category</th>
+                            <th className="py-3">Difficulty</th>
+                            <th className="py-3">Target Role</th>
+                            <th className="py-3 text-end pe-4">Actions</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                        </thead>
+                        <tbody>
+                          {filteredQuestions.length === 0 ? (
+                            <tr>
+                              <td colSpan="5" className="text-center py-5 text-muted">
+                                No questions found matching your filters.
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredQuestions.map((q) => (
+                              <tr key={q.id}>
+                                <td className="ps-4 py-3" style={{ maxWidth: '460px' }}>
+                                  <div className="fw-semibold text-dark small">{q.question_text}</div>
+                                  {q.sample_answer && (
+                                    <div
+                                      className="text-muted text-truncate mt-1"
+                                      style={{ fontSize: '12px' }}
+                                    >
+                                      Model Guide: {q.sample_answer}
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  <span
+                                    className="badge rounded-pill"
+                                    style={{
+                                      backgroundColor: '#EEF2FF',
+                                      color: '#4F46E5',
+                                      fontSize: '11px',
+                                    }}
+                                  >
+                                    {q.category}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span
+                                    className="badge rounded-pill"
+                                    style={{
+                                      backgroundColor:
+                                        q.difficulty === 'Hard'
+                                          ? '#FEF2F2'
+                                          : q.difficulty === 'Medium'
+                                          ? '#FFFBEB'
+                                          : '#ECFDF5',
+                                      color:
+                                        q.difficulty === 'Hard'
+                                          ? '#EF4444'
+                                          : q.difficulty === 'Medium'
+                                          ? '#D97706'
+                                          : '#10B981',
+                                      fontSize: '11px',
+                                    }}
+                                  >
+                                    {q.difficulty}
+                                  </span>
+                                </td>
+                                <td className="small text-muted">{q.role_target}</td>
+                                <td className="text-end pe-4">
+                                  <div className="d-inline-flex gap-1">
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-light border"
+                                      title="Edit Question"
+                                      onClick={() => openEditQuestionModal(q)}
+                                    >
+                                      <i className="bi bi-pencil"></i>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn btn-sm btn-light border text-danger"
+                                      title="Delete Question"
+                                      onClick={() => setQuestionDeleteTarget(q)}
+                                    >
+                                      <i className="bi bi-trash"></i>
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </main>
       </div>
+
+      {/* ==================== MODAL 1: USER DISABLE / DELETE CONFIRMATION ==================== */}
+      {userConfirmModal && (
+        <div
+          className="modal d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content p-2" style={{ borderRadius: '16px', border: 'none' }}>
+              <div className="modal-body p-4">
+                <div className="d-flex align-items-start gap-3">
+                  <div
+                    className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      backgroundColor:
+                        userConfirmModal.type === 'delete'
+                          ? '#FEF2F2'
+                          : userConfirmModal.type === 'disable'
+                          ? '#FFFBEB'
+                          : '#ECFDF5',
+                      color:
+                        userConfirmModal.type === 'delete'
+                          ? '#EF4444'
+                          : userConfirmModal.type === 'disable'
+                          ? '#F59E0B'
+                          : '#10B981',
+                    }}
+                  >
+                    <i
+                      className={`bi fs-5 ${
+                        userConfirmModal.type === 'delete'
+                          ? 'bi-exclamation-triangle-fill'
+                          : userConfirmModal.type === 'disable'
+                          ? 'bi-slash-circle-fill'
+                          : 'bi-check-circle-fill'
+                      }`}
+                    ></i>
+                  </div>
+                  <div>
+                    <h5 className="fw-bold text-dark mb-1">
+                      {userConfirmModal.type === 'delete'
+                        ? 'Delete User'
+                        : userConfirmModal.type === 'disable'
+                        ? 'Disable User'
+                        : 'Activate User'}
+                    </h5>
+                    <p className="text-muted small mb-0">
+                      {userConfirmModal.type === 'delete' &&
+                        `Are you sure you want to permanently delete ${userConfirmModal.target.email}? All user resumes, applications, and interview history will be removed.`}
+                      {userConfirmModal.type === 'disable' &&
+                        `Are you sure you want to disable ${userConfirmModal.target.email}? They will not be able to sign in until reactivated.`}
+                      {userConfirmModal.type === 'enable' &&
+                        `Restore platform login access for ${userConfirmModal.target.email}?`}
+                    </p>
+                  </div>
+                </div>
+                <div className="d-flex justify-content-end gap-2 mt-4">
+                  <button
+                    type="button"
+                    className="btn btn-light border px-3"
+                    onClick={() => setUserConfirmModal(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn px-3 fw-semibold text-white ${
+                      userConfirmModal.type === 'delete'
+                        ? 'btn-danger'
+                        : userConfirmModal.type === 'disable'
+                        ? 'btn-warning'
+                        : 'btn-success'
+                    }`}
+                    onClick={handleConfirmUserAction}
+                  >
+                    {userConfirmModal.type === 'delete'
+                      ? 'Yes, Delete User'
+                      : userConfirmModal.type === 'disable'
+                      ? 'Yes, Disable User'
+                      : 'Yes, Activate User'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL 2: ADD / EDIT JOB POSTING ==================== */}
+      {showJobModal && (
+        <div
+          className="modal d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content" style={{ borderRadius: '16px', border: 'none' }}>
+              <div className="modal-header border-bottom px-4 py-3">
+                <h5 className="modal-title fw-bold text-dark">
+                  {editingJob ? 'Edit Job Posting' : 'Publish New Job Posting'}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowJobModal(false)}
+                ></button>
+              </div>
+              <form onSubmit={handleSaveJob}>
+                <div className="modal-body p-4">
+                  <div className="row g-3">
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold">Job Title *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Senior Backend Engineer"
+                        value={jobForm.title}
+                        onChange={(e) => setJobForm({ ...jobForm, title: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold">Company *</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. TechCorp Solutions"
+                        value={jobForm.company}
+                        onChange={(e) => setJobForm({ ...jobForm, company: e.target.value })}
+                        required
+                      />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Location</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        value={jobForm.location}
+                        onChange={(e) => setJobForm({ ...jobForm, location: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Employment Type</label>
+                      <select
+                        className="form-select"
+                        value={jobForm.job_type}
+                        onChange={(e) => setJobForm({ ...jobForm, job_type: e.target.value })}
+                      >
+                        <option value="Full-time">Full-time</option>
+                        <option value="Part-time">Part-time</option>
+                        <option value="Contract">Contract</option>
+                        <option value="Internship">Internship</option>
+                        <option value="Remote">Remote</option>
+                      </select>
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Experience Level</label>
+                      <select
+                        className="form-select"
+                        value={jobForm.experience_level}
+                        onChange={(e) =>
+                          setJobForm({ ...jobForm, experience_level: e.target.value })
+                        }
+                      >
+                        <option value="Entry Level">Entry Level</option>
+                        <option value="Mid Level">Mid Level</option>
+                        <option value="Senior Level">Senior Level</option>
+                        <option value="Expert Level">Expert Level</option>
+                      </select>
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold">Salary Range</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. ₹12 LPA – ₹18 LPA"
+                        value={jobForm.salary_range}
+                        onChange={(e) => setJobForm({ ...jobForm, salary_range: e.target.value })}
+                      />
+                    </div>
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold">
+                        Min. Experience (Years)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        className="form-control"
+                        value={jobForm.min_experience_years}
+                        onChange={(e) =>
+                          setJobForm({ ...jobForm, min_experience_years: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">
+                        Required Skills (comma-separated) *
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="Python, Django, REST API, PostgreSQL, Docker"
+                        value={jobForm.required_skills}
+                        onChange={(e) =>
+                          setJobForm({ ...jobForm, required_skills: e.target.value })
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">
+                        Preferred Skills (comma-separated)
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="AWS, Redis, CI/CD"
+                        value={jobForm.preferred_skills}
+                        onChange={(e) =>
+                          setJobForm({ ...jobForm, preferred_skills: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">Job Description *</label>
+                      <textarea
+                        rows="3"
+                        className="form-control"
+                        placeholder="Describe responsibilities, technical stack, and team impact..."
+                        value={jobForm.description}
+                        onChange={(e) => setJobForm({ ...jobForm, description: e.target.value })}
+                        required
+                      ></textarea>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer border-top px-4 py-3">
+                  <button
+                    type="button"
+                    className="btn btn-light border"
+                    onClick={() => setShowJobModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn text-white fw-semibold px-4"
+                    style={{ backgroundColor: '#4F46E5' }}
+                  >
+                    {editingJob ? 'Save Changes' : 'Publish Job'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL 3: DELETE JOB CONFIRMATION ==================== */}
+      {jobDeleteTarget && (
+        <div
+          className="modal d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content p-4" style={{ borderRadius: '16px', border: 'none' }}>
+              <h5 className="fw-bold text-dark mb-1">Delete Job Posting</h5>
+              <p className="text-muted small mb-4">
+                Are you sure you want to delete <strong>{jobDeleteTarget.title}</strong> at{' '}
+                {jobDeleteTarget.company}? This action cannot be undone.
+              </p>
+              <div className="d-flex justify-content-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-light border"
+                  onClick={() => setJobDeleteTarget(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger fw-semibold"
+                  onClick={handleConfirmDeleteJob}
+                >
+                  Delete Job
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL 4: ADD / EDIT INTERVIEW QUESTION ==================== */}
+      {showQuestionModal && (
+        <div
+          className="modal d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}
+        >
+          <div className="modal-dialog modal-lg modal-dialog-centered">
+            <div className="modal-content" style={{ borderRadius: '16px', border: 'none' }}>
+              <div className="modal-header border-bottom px-4 py-3">
+                <h5 className="modal-title fw-bold text-dark">
+                  {editingQuestion ? 'Edit Interview Question' : 'Add Interview Question'}
+                </h5>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setShowQuestionModal(false)}
+                ></button>
+              </div>
+              <form onSubmit={handleSaveQuestion}>
+                <div className="modal-body p-4">
+                  <div className="row g-3">
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Category</label>
+                      <select
+                        className="form-select"
+                        value={questionForm.category}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, category: e.target.value })
+                        }
+                      >
+                        <option value="Technical">Technical</option>
+                        <option value="Behavioral">Behavioral</option>
+                        <option value="HR">HR</option>
+                        <option value="Project-based">Project-based</option>
+                      </select>
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Difficulty</label>
+                      <select
+                        className="form-select"
+                        value={questionForm.difficulty}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, difficulty: e.target.value })
+                        }
+                      >
+                        <option value="Easy">Easy</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Hard">Hard</option>
+                      </select>
+                    </div>
+                    <div className="col-md-4">
+                      <label className="form-label small fw-semibold">Target Role</label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Full Stack Developer"
+                        value={questionForm.role_target}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, role_target: e.target.value })
+                        }
+                        required
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">Question Prompt *</label>
+                      <textarea
+                        rows="3"
+                        className="form-control"
+                        placeholder="Enter the interview question..."
+                        value={questionForm.question_text}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, question_text: e.target.value })
+                        }
+                        required
+                      ></textarea>
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">
+                        Ideal Key Talking Points (comma-separated)
+                      </label>
+                      <input
+                        type="text"
+                        className="form-control"
+                        placeholder="e.g. Database indexing, Query optimization, Caching strategy"
+                        value={questionForm.ideal_points}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, ideal_points: e.target.value })
+                        }
+                      />
+                    </div>
+                    <div className="col-12">
+                      <label className="form-label small fw-semibold">Sample / Model Answer</label>
+                      <textarea
+                        rows="3"
+                        className="form-control"
+                        placeholder="Provide an exemplary reference answer for candidate study & AI evaluation..."
+                        value={questionForm.sample_answer}
+                        onChange={(e) =>
+                          setQuestionForm({ ...questionForm, sample_answer: e.target.value })
+                        }
+                      ></textarea>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer border-top px-4 py-3">
+                  <button
+                    type="button"
+                    className="btn btn-light border"
+                    onClick={() => setShowQuestionModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn text-white fw-semibold px-4"
+                    style={{ backgroundColor: '#4F46E5' }}
+                  >
+                    {editingQuestion ? 'Save Question' : 'Add to Question Bank'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================== MODAL 5: DELETE QUESTION CONFIRMATION ==================== */}
+      {questionDeleteTarget && (
+        <div
+          className="modal d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)' }}
+        >
+          <div className="modal-dialog modal-dialog-centered">
+            <div className="modal-content p-4" style={{ borderRadius: '16px', border: 'none' }}>
+              <h5 className="fw-bold text-dark mb-1">Delete Interview Question</h5>
+              <p className="text-muted small mb-4">
+                Are you sure you want to remove this prompt from the Question Bank?
+              </p>
+              <div className="d-flex justify-content-end gap-2">
+                <button
+                  type="button"
+                  className="btn btn-light border"
+                  onClick={() => setQuestionDeleteTarget(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger fw-semibold"
+                  onClick={handleConfirmDeleteQuestion}
+                >
+                  Delete Question
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
+import { Footer } from './components/layout/Footer';
 
 // Public & Auth Pages
 import Home from './pages/public/Home';
@@ -15,8 +16,8 @@ import AdminLogin from './pages/auth/AdminLogin';
 import CandidateDashboard from './pages/candidate/CandidateDashboard';
 import Profile from './pages/candidate/Profile';
 import ResumeManagement from './pages/candidate/ResumeManagement';
-import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 import ResumeBuilder from './pages/candidate/ResumeBuilder';
+import ResumeAnalyzer from './pages/candidate/ResumeAnalyzer';
 import JobDescriptions from './pages/candidate/JobDescriptions';
 import JobMatching from './pages/candidate/JobMatching';
 import Applications from './pages/candidate/Applications';
@@ -26,53 +27,21 @@ import MockInterview from './pages/candidate/MockInterview';
 import InterviewReport from './pages/candidate/InterviewReport';
 import InterviewHistory from './pages/candidate/InterviewHistory';
 
-// Admin Pages
+// Admin Portal Page
 import AdminDashboard from './pages/admin/AdminDashboard';
 
-// Candidate-Only Footer
-const CandidateFooter = () => (
-  <footer className="bg-white border-top py-3 mt-auto shadow-sm">
-    <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
-      <div className="small text-muted">
-        &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
-      </div>
-      <div className="d-flex gap-3 small">
-        <Link to="/" className="text-decoration-none text-muted">
-          Home
-        </Link>
-        <Link to="/dashboard" className="text-decoration-none text-muted">
-          Dashboard
-        </Link>
-        <Link to="/resume-builder" className="text-decoration-none text-muted">
-          AI Builder
-        </Link>
-        <Link to="/jobs" className="text-decoration-none text-muted">
-          Jobs
-        </Link>
-        <Link to="/applications" className="text-decoration-none text-muted">
-          Applications
-        </Link>
-        <Link to="/interview-history" className="text-decoration-none text-muted">
-          History
-        </Link>
-        <Link to="/profile" className="text-decoration-none text-muted">
-          Profile
-        </Link>
-      </div>
+// Candidate Layout: Renders persistent Navbar, active route in Outlet, and pinned Footer
+const CandidateLayout = () => {
+  return (
+    <div className="d-flex flex-column min-vh-100" style={{ backgroundColor: '#F8FAFC' }}>
+      <Navbar />
+      <main className="flex-grow-1">
+        <Outlet />
+      </main>
+      <Footer />
     </div>
-  </footer>
-);
-
-// Candidate-Only Layout
-const CandidateLayout = () => (
-  <div className="d-flex flex-column min-vh-100 bg-light">
-    <Navbar />
-    <main className="flex-grow-1">
-      <Outlet />
-    </main>
-    <CandidateFooter />
-  </div>
-);
+  );
+};
 
 function App() {
   return (
@@ -86,7 +55,7 @@ function App() {
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/admin-login" element={<AdminLogin />} />
 
-          {/* Candidate-Only Routes */}
+          {/* Protected Candidate Routes (Wrapped in CandidateLayout) */}
           <Route
             element={
               <ProtectedRoute allowedRoles={['candidate']}>
@@ -97,8 +66,8 @@ function App() {
             <Route path="/dashboard" element={<CandidateDashboard />} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/resumes" element={<ResumeManagement />} />
-            <Route path="/resume-analyzer" element={<ResumeAnalyzer />} />
             <Route path="/resume-builder" element={<ResumeBuilder />} />
+            <Route path="/resume-analyzer" element={<ResumeAnalyzer />} />
             <Route path="/jobs" element={<JobDescriptions />} />
             <Route path="/job-descriptions" element={<JobDescriptions />} />
             <Route path="/job-matching" element={<JobMatching />} />
@@ -110,10 +79,9 @@ function App() {
             <Route path="/interview-report/:sessionId" element={<InterviewReport />} />
             <Route path="/interview-history" element={<InterviewHistory />} />
             <Route path="/interviews/history" element={<InterviewHistory />} />
-            <Route path="/history" element={<InterviewHistory />} />
           </Route>
 
-          {/* Admin-Only Portal */}
+          {/* Standalone Protected Admin Portal (No Candidate Navbar or Footer) */}
           <Route
             path="/admin"
             element={
