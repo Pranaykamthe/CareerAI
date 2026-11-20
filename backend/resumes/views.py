@@ -296,19 +296,24 @@ class ResumeAIImproveSectionView(APIView):
     def post(self, request):
         section = request.data.get('section', 'summary')
         action = request.data.get('action', 'Improve sentence and ATS impact')
-        content = request.data.get('content', '')
+        content = request.data.get('content') or request.data.get('original_text', '')
         target_role = request.data.get('target_role', 'Software Engineer')
         ats_issues = request.data.get('ats_issues', [])
 
-        if not content:
+        if not str(content).strip():
             return Response({"error": "Content is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         ai = get_ai_service()
         if not hasattr(ai, 'improve_resume_section'):
-            return Response({"error": "Groq API key not configured in backend/.env"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"error": "Groq API key not configured in backend/.env"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE
+            )
 
         result = ai.improve_resume_section(section, action, content, target_role, ats_issues)
-        return Response(result)
+        if 'score_increase' not in result and 'estimated_score_boost' in result:
+            result['score_increase'] = result['estimated_score_boost']
+        return Response(result, status=status.HTTP_200_OK)
 
 
 class ResumeAutoFixATSView(APIView):
