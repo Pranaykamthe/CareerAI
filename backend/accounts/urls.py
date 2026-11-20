@@ -5,6 +5,7 @@ from .views import (
     CustomTokenObtainPairView,
     CurrentUserView,
     CandidateProfileView,
+    ProfilePhotoView,
     ForgotPasswordRequestView,
 )
 
@@ -14,5 +15,6 @@ urlpatterns = [
     path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     path('me/', CurrentUserView.as_view(), name='auth-me'),
     path('profile/', CandidateProfileView.as_view(), name='candidate-profile'),
+    path('profile/photo/', ProfilePhotoView.as_view(), name='profile-photo'),
     path('forgot-password/', ForgotPasswordRequestView.as_view(), name='forgot-password'),
 ]

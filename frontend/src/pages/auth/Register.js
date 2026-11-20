@@ -3,155 +3,85 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 
 const Register = () => {
-  const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    password: '',
-    confirm_password: '',
-    agreeTerms: false,
-  });
-
-  const [errors, setErrors] = useState({});
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [agreeTerms, setAgreeTerms] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const { register } = useAuth();
   const navigate = useNavigate();
 
-  // Password Validation Rules
-  const hasMinLength = formData.password.length >= 8;
-  const hasUppercase = /[A-Z]/.test(formData.password);
-  const hasNumber = /[0-9]/.test(formData.password);
-  const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(formData.password);
+  // Live password strength criteria
+  const hasMinLength = password.length >= 8;
+  const hasUppercase = /[A-Z]/.test(password);
+  const hasNumber = /[0-9]/.test(password);
+  const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+  const strengthScore = [hasMinLength, hasUppercase, hasNumber, hasSpecial].filter(Boolean).length;
 
-  const calculateStrength = () => {
-    let score = 0;
-    if (hasMinLength) score += 1;
-    if (hasUppercase) score += 1;
-    if (hasNumber) score += 1;
-    if (hasSpecial) score += 1;
-
-    if (score === 0) return { label: 'Empty', color: '#E2E8F0', width: '0%' };
-    if (score <= 2) return { label: 'Weak', color: '#EF4444', width: '35%' };
-    if (score === 3) return { label: 'Medium', color: '#F59E0B', width: '70%' };
+  const getStrengthMeta = () => {
+    if (!password) return { label: '', color: '#E2E8F0', width: '0%' };
+    if (strengthScore <= 1) return { label: 'Weak', color: '#EF4444', width: '25%' };
+    if (strengthScore === 2) return { label: 'Fair', color: '#F59E0B', width: '50%' };
+    if (strengthScore === 3) return { label: 'Good', color: '#3B82F6', width: '75%' };
     return { label: 'Strong', color: '#10B981', width: '100%' };
   };
 
-  const strength = calculateStrength();
+  const strengthMeta = getStrengthMeta();
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: type === 'checkbox' ? checked : value,
-    }));
-    if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: '' }));
-    }
-  };
-
-  const validate = () => {
-    const err = {};
-    if (!formData.username.trim()) err.username = 'Full name is required';
-    if (!formData.email.trim()) {
-      err.email = 'Email address is required';
-    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
-      err.email = 'Please enter a valid email address';
-    }
-    if (!formData.password) {
-      err.password = 'Password is required';
-    } else if (strength.label === 'Weak') {
-      err.password = 'Use a stronger password';
-    }
-    if (!formData.confirm_password) {
-      err.confirm_password = 'Please confirm your password';
-    } else if (formData.password !== formData.confirm_password) {
-      err.confirm_password = 'Passwords do not match';
-    }
-    if (!formData.agreeTerms) {
-      err.agreeTerms = 'You must agree to the Terms of Service';
-    }
-    return err;
-  };
-
-  const handleSubmit = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length > 0) {
-      setErrors(validationErrors);
+    setError('');
+    setSuccess('');
+
+    if (!username.trim() || !email.trim()) {
+      setError('Please enter your username and email address.');
+      return;
+    }
+    if (!hasMinLength || !hasUppercase || !hasNumber) {
+      setError('Password must be at least 8 characters and include an uppercase letter and a number.');
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.');
+      return;
+    }
+    if (!agreeTerms) {
+      setError('Please accept the Terms of Service and Privacy Policy to continue.');
       return;
     }
 
-    setIsSubmitting(true);
-    setErrors({});
+    setLoading(true);
     try {
       await register({
-        username: formData.username,
-        email: formData.email,
-        password: formData.password,
-        confirm_password: formData.confirm_password,
-        role: 'candidate',
+        username: username.trim(),
+        email: email.trim(),
+        password,
+        password_confirm: confirmPassword,
       });
-      setIsSuccess(true);
+      setSuccess('Account created successfully! Redirecting to login...');
+      setTimeout(() => {
+        navigate('/login');
+      }, 1400);
     } catch (err) {
-      const serverErrors = err.response?.data;
-      if (typeof serverErrors === 'object') {
-        const parsed = {};
-        for (const [k, v] of Object.entries(serverErrors)) {
-          parsed[k] = Array.isArray(v) ? v[0] : v;
-        }
-        setErrors(parsed);
+      const apiErrors = err.response?.data;
+      if (apiErrors && typeof apiErrors === 'object') {
+        const firstKey = Object.keys(apiErrors)[0];
+        const firstMsg = Array.isArray(apiErrors[firstKey])
+          ? apiErrors[firstKey][0]
+          : apiErrors[firstKey];
+        setError(String(firstMsg || 'Registration failed. Please verify your details.'));
       } else {
-        setErrors({ general: 'Registration failed. Please try again.' });
+        setError('Registration failed. Please try again.');
       }
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
-
-  if (isSuccess) {
-    return (
-      <div
-        className="container-fluid min-vh-100 d-flex align-items-center justify-content-center p-4"
-        style={{ backgroundColor: '#F8FAFC' }}
-      >
-        <div
-          className="card bg-white shadow-sm p-5 text-center"
-          style={{
-            maxWidth: '460px',
-            width: '100%',
-            borderRadius: '16px',
-            border: '1px solid #E2E8F0',
-          }}
-        >
-          <div
-            className="mx-auto mb-4 d-flex align-items-center justify-content-center rounded-circle"
-            style={{
-              width: '72px',
-              height: '72px',
-              backgroundColor: '#ECFDF5',
-              color: '#10B981',
-            }}
-          >
-            <i className="bi bi-check-lg fs-1"></i>
-          </div>
-          <h3 className="fw-bold text-dark mb-2">Account Created!</h3>
-          <p className="text-muted small mb-4">
-            Welcome to CareerAI. Your candidate profile is ready—sign in to upload your resume and start practicing.
-          </p>
-          <button
-            className="btn w-100 py-2 fw-semibold text-white d-flex align-items-center justify-content-center gap-2"
-            style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
-            onClick={() => navigate('/login')}
-          >
-            <i className="bi bi-box-arrow-in-right"></i> Go to Candidate Login
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div
@@ -159,7 +89,7 @@ const Register = () => {
       style={{ backgroundColor: '#F8FAFC' }}
     >
       <div className="row g-0 flex-grow-1">
-        {/* Left Side: Dark Hero Brand Panel (Matches Login & Admin Portal) */}
+        {/* Left Side: Dark Hero Brand Panel */}
         <div
           className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5 text-white"
           style={{
@@ -181,8 +111,7 @@ const Register = () => {
           {/* Center Hero Copy */}
           <div className="my-auto py-5">
             <h1 className="display-6 fw-bold mb-3 text-white">
-              Accelerate Your Career with{' '}
-              <span style={{ color: '#6366F1' }}>CareerAI</span>
+              Launch Your Career with <span style={{ color: '#6366F1' }}>CareerAI</span>
             </h1>
             <div
               className="mb-4"
@@ -193,76 +122,24 @@ const Register = () => {
                 borderRadius: '2px',
               }}
             ></div>
-            <h5 className="fw-semibold text-white mb-2">
-              Your Intelligent Job & Interview Copilot
-            </h5>
-            <p
-              className="text-secondary lead fs-6 mb-5"
-              style={{ maxWidth: '420px' }}
-            >
-              Create your free candidate account to benchmark your resume against ATS filters, uncover high-fit roles, and practice interviews with instant AI feedback.
+            <h5 className="fw-semibold text-white mb-2">Built for Modern Job Seekers</h5>
+            <p className="text-secondary lead fs-6 mb-5" style={{ maxWidth: '420px' }}>
+              Create your free candidate workspace to benchmark your resume against ATS filters, uncover skill gaps, and practice with real-time AI interviewers.
             </p>
 
-            {/* Stacked Feature Highlights */}
-            <div className="d-flex flex-column gap-3 pt-3 border-top border-secondary border-opacity-25">
-              <div className="d-flex align-items-start gap-3">
-                <div
-                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                    color: '#818CF8',
-                  }}
-                >
-                  <i className="bi bi-file-earmark-check fs-5"></i>
-                </div>
-                <div>
-                  <div className="fw-semibold text-white small">ATS Resume Scoring</div>
-                  <small className="text-secondary">
-                    Instant keyword gap detection and bullet-point optimization.
-                  </small>
-                </div>
+            {/* Feature Highlights */}
+            <div className="d-flex flex-column gap-3 text-secondary small pt-3 border-top border-secondary border-opacity-25">
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-check-circle-fill" style={{ color: '#6366F1' }}></i>
+                <span>Instant ATS Resume Scoring & AI Builder</span>
               </div>
-
-              <div className="d-flex align-items-start gap-3">
-                <div
-                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                    color: '#818CF8',
-                  }}
-                >
-                  <i className="bi bi-bullseye fs-5"></i>
-                </div>
-                <div>
-                  <div className="fw-semibold text-white small">Smart Job Matching</div>
-                  <small className="text-secondary">
-                    Ranked job opportunities aligned to your skills and experience.
-                  </small>
-                </div>
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-check-circle-fill" style={{ color: '#6366F1' }}></i>
+                <span>Semantic Job Matching & Application CRM</span>
               </div>
-
-              <div className="d-flex align-items-start gap-3">
-                <div
-                  className="rounded-3 d-inline-flex align-items-center justify-content-center flex-shrink-0"
-                  style={{
-                    width: '38px',
-                    height: '38px',
-                    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-                    color: '#818CF8',
-                  }}
-                >
-                  <i className="bi bi-mic fs-5"></i>
-                </div>
-                <div>
-                  <div className="fw-semibold text-white small">AI Mock Interviews</div>
-                  <small className="text-secondary">
-                    Role-specific technical and behavioral coaching sessions.
-                  </small>
-                </div>
+              <div className="d-flex align-items-center gap-2">
+                <i className="bi bi-check-circle-fill" style={{ color: '#6366F1' }}></i>
+                <span>Role-Specific AI Mock Interviews & Reports</span>
               </div>
             </div>
           </div>
@@ -273,8 +150,29 @@ const Register = () => {
           </div>
         </div>
 
-        {/* Right Side: Centered Registration Card */}
-        <div className="col-lg-7 d-flex flex-column align-items-center justify-content-center p-4 py-5">
+        {/* Right Side: Centered Candidate Registration Card */}
+        <div className="col-lg-7 d-flex flex-column align-items-center justify-content-center p-4">
+          {/* Top Navigation Bar: Back to Homepage */}
+          <div
+            className="d-flex justify-content-between align-items-center mb-3"
+            style={{ maxWidth: '480px', width: '100%' }}
+          >
+            <Link
+              to="/"
+              className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-2 px-3 py-2 fw-medium shadow-sm"
+              style={{ borderRadius: '10px', borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+            >
+              <i className="bi bi-arrow-left" style={{ color: '#4F46E5' }}></i> Back to Homepage
+            </Link>
+            <Link
+              to="/"
+              className="d-lg-none text-decoration-none fw-bold text-dark d-inline-flex align-items-center"
+            >
+              <i className="bi bi-layers-fill me-1" style={{ color: '#4F46E5' }}></i>
+              CareerAI
+            </Link>
+          </div>
+
           <div
             className="card bg-white p-4 p-md-5 shadow-sm"
             style={{
@@ -295,93 +193,77 @@ const Register = () => {
                   color: '#4F46E5',
                 }}
               >
-                <i className="bi bi-person-plus fs-3"></i>
+                <i className="bi bi-person-plus-fill fs-3"></i>
               </div>
-              <h3 className="fw-bold text-dark mb-1">Create Your Account</h3>
-              <p className="text-muted small mb-0">
-                Start your CareerAI candidate workspace in seconds
-              </p>
+              <h3 className="fw-bold text-dark mb-1">Create Candidate Account</h3>
+              <p className="text-muted small mb-0">Start optimizing your career readiness today</p>
             </div>
 
-            {errors.general && (
-              <div
-                className="alert alert-danger py-2 small d-flex align-items-center"
-                role="alert"
-              >
+            {error && (
+              <div className="alert alert-danger py-2 small d-flex align-items-center" role="alert">
                 <i className="bi bi-exclamation-circle-fill me-2"></i>
-                <div>{errors.general}</div>
+                <div>{error}</div>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} noValidate>
-              {/* Full Name */}
+            {success && (
+              <div className="alert alert-success py-2 small d-flex align-items-center" role="alert">
+                <i className="bi bi-check-circle-fill me-2"></i>
+                <div>{success}</div>
+              </div>
+            )}
+
+            <form onSubmit={handleRegister}>
+              {/* Username Input */}
               <div className="mb-3">
-                <label className="form-label small fw-semibold text-dark">
-                  Full Name
-                </label>
+                <label className="form-label small fw-semibold text-dark">Full Name / Username</label>
                 <div className="input-group">
                   <span className="input-group-text bg-white border-end-0 text-muted">
                     <i className="bi bi-person"></i>
                   </span>
                   <input
                     type="text"
-                    name="username"
-                    className={`form-control border-start-0 ps-0 ${
-                      errors.username ? 'is-invalid' : ''
-                    }`}
-                    placeholder="John Doe"
-                    value={formData.username}
-                    onChange={handleChange}
+                    className="form-control border-start-0 ps-0"
+                    placeholder="johndoe"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
                   />
                 </div>
-                {errors.username && (
-                  <div className="text-danger small mt-1">{errors.username}</div>
-                )}
               </div>
 
-              {/* Email Address */}
+              {/* Email Input */}
               <div className="mb-3">
-                <label className="form-label small fw-semibold text-dark">
-                  Email Address
-                </label>
+                <label className="form-label small fw-semibold text-dark">Email Address</label>
                 <div className="input-group">
                   <span className="input-group-text bg-white border-end-0 text-muted">
                     <i className="bi bi-envelope"></i>
                   </span>
                   <input
                     type="email"
-                    name="email"
-                    className={`form-control border-start-0 ps-0 ${
-                      errors.email ? 'is-invalid' : ''
-                    }`}
+                    className="form-control border-start-0 ps-0"
                     placeholder="john.doe@example.com"
-                    value={formData.email}
-                    onChange={handleChange}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
                   />
                 </div>
-                {errors.email && (
-                  <div className="text-danger small mt-1">{errors.email}</div>
-                )}
               </div>
 
-              {/* Password */}
+              {/* Password Input with Visibility Toggle */}
               <div className="mb-2">
-                <label className="form-label small fw-semibold text-dark">
-                  Password
-                </label>
+                <label className="form-label small fw-semibold text-dark">Password</label>
                 <div className="input-group">
                   <span className="input-group-text bg-white border-end-0 text-muted">
                     <i className="bi bi-lock"></i>
                   </span>
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    className={`form-control border-start-0 border-end-0 ps-0 ${
-                      errors.password ? 'is-invalid' : ''
-                    }`}
+                    className="form-control border-start-0 border-end-0 ps-0"
                     placeholder="Create a strong password"
-                    value={formData.password}
-                    onChange={handleChange}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
                   />
                   <button
                     type="button"
@@ -393,163 +275,87 @@ const Register = () => {
                     <i className={`bi ${showPassword ? 'bi-eye-slash' : 'bi-eye'}`}></i>
                   </button>
                 </div>
-                {errors.password && (
-                  <div className="text-danger small mt-1">{errors.password}</div>
-                )}
               </div>
 
-              {/* Password Strength Indicator */}
-              {formData.password && (
-                <div
-                  className="p-2.5 rounded-3 mb-3 p-2"
-                  style={{
-                    backgroundColor: '#F8FAFC',
-                    border: '1px solid #E2E8F0',
-                  }}
-                >
+              {/* Live Password Strength Meter & Rules */}
+              {password && (
+                <div className="mb-3">
                   <div className="d-flex justify-content-between align-items-center mb-1">
-                    <span className="small text-muted">Password strength:</span>
+                    <span className="text-muted" style={{ fontSize: '11.5px' }}>
+                      Password Strength
+                    </span>
                     <span
-                      className="small fw-semibold"
-                      style={{ color: strength.color }}
+                      className="fw-semibold"
+                      style={{ fontSize: '11.5px', color: strengthMeta.color }}
                     >
-                      {strength.label}
+                      {strengthMeta.label}
                     </span>
                   </div>
-                  <div className="progress" style={{ height: '5px' }}>
+                  <div className="progress mb-2" style={{ height: '5px', backgroundColor: '#E2E8F0' }}>
                     <div
                       className="progress-bar"
-                      role="progressbar"
                       style={{
-                        width: strength.width,
-                        backgroundColor: strength.color,
+                        width: strengthMeta.width,
+                        backgroundColor: strengthMeta.color,
+                        transition: 'width 0.2s ease',
                       }}
                     ></div>
                   </div>
                   <div
-                    className="row g-1 mt-2 text-muted"
-                    style={{ fontSize: '11px' }}
+                    className="row g-1 p-2 rounded-3 text-muted"
+                    style={{ fontSize: '11.5px', backgroundColor: '#F8FAFC' }}
                   >
-                    <div
-                      className={`col-6 ${
-                        hasMinLength ? 'text-success fw-medium' : ''
-                      }`}
-                    >
-                      <i
-                        className={`bi ${
-                          hasMinLength ? 'bi-check-circle-fill' : 'bi-circle'
-                        } me-1`}
-                      ></i>
+                    <div className={`col-6 ${hasMinLength ? 'text-success fw-medium' : ''}`}>
+                      <i className={`bi ${hasMinLength ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i>
                       Min 8 characters
                     </div>
-                    <div
-                      className={`col-6 ${
-                        hasUppercase ? 'text-success fw-medium' : ''
-                      }`}
-                    >
-                      <i
-                        className={`bi ${
-                          hasUppercase ? 'bi-check-circle-fill' : 'bi-circle'
-                        } me-1`}
-                      ></i>
+                    <div className={`col-6 ${hasUppercase ? 'text-success fw-medium' : ''}`}>
+                      <i className={`bi ${hasUppercase ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i>
                       One uppercase
                     </div>
-                    <div
-                      className={`col-6 ${
-                        hasNumber ? 'text-success fw-medium' : ''
-                      }`}
-                    >
-                      <i
-                        className={`bi ${
-                          hasNumber ? 'bi-check-circle-fill' : 'bi-circle'
-                        } me-1`}
-                      ></i>
+                    <div className={`col-6 ${hasNumber ? 'text-success fw-medium' : ''}`}>
+                      <i className={`bi ${hasNumber ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i>
                       One number
                     </div>
-                    <div
-                      className={`col-6 ${
-                        hasSpecial ? 'text-success fw-medium' : ''
-                      }`}
-                    >
-                      <i
-                        className={`bi ${
-                          hasSpecial ? 'bi-check-circle-fill' : 'bi-circle'
-                        } me-1`}
-                      ></i>
-                      One special symbol
+                    <div className={`col-6 ${hasSpecial ? 'text-success fw-medium' : ''}`}>
+                      <i className={`bi ${hasSpecial ? 'bi-check-circle-fill' : 'bi-circle'} me-1`}></i>
+                      One symbol
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Confirm Password */}
+              {/* Confirm Password Input */}
               <div className="mb-3">
-                <label className="form-label small fw-semibold text-dark">
-                  Confirm Password
-                </label>
+                <label className="form-label small fw-semibold text-dark">Confirm Password</label>
                 <div className="input-group">
                   <span className="input-group-text bg-white border-end-0 text-muted">
                     <i className="bi bi-shield-check"></i>
                   </span>
                   <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    name="confirm_password"
-                    className={`form-control border-start-0 border-end-0 ps-0 ${
-                      errors.confirm_password ? 'is-invalid' : ''
-                    }`}
+                    type={showPassword ? 'text' : 'password'}
+                    className="form-control border-start-0 ps-0"
                     placeholder="Repeat your password"
-                    value={formData.confirm_password}
-                    onChange={handleChange}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
                   />
-                  <button
-                    type="button"
-                    className="input-group-text bg-white border-start-0 text-muted"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    tabIndex="-1"
-                    aria-label={
-                      showConfirmPassword ? 'Hide password' : 'Show password'
-                    }
-                  >
-                    <i
-                      className={`bi ${
-                        showConfirmPassword ? 'bi-eye-slash' : 'bi-eye'
-                      }`}
-                    ></i>
-                  </button>
                 </div>
-                {errors.confirm_password && (
-                  <div className="text-danger small mt-1">
-                    {errors.confirm_password}
-                  </div>
-                )}
               </div>
 
-              {/* Terms Checkbox */}
-              <div className="mb-4 form-check">
+              {/* Terms Agreement */}
+              <div className="form-check mb-4">
                 <input
                   type="checkbox"
-                  name="agreeTerms"
-                  className={`form-check-input ${
-                    errors.agreeTerms ? 'is-invalid' : ''
-                  }`}
+                  className="form-check-input"
                   id="agreeTerms"
-                  checked={formData.agreeTerms}
-                  onChange={handleChange}
+                  checked={agreeTerms}
+                  onChange={(e) => setAgreeTerms(e.target.checked)}
                   style={{ accentColor: '#4F46E5' }}
                 />
-                <label className="form-check-label small text-muted" htmlFor="agreeTerms">
-                  I agree to the{' '}
-                  <span className="fw-medium" style={{ color: '#4F46E5' }}>
-                    Terms of Service
-                  </span>{' '}
-                  and{' '}
-                  <span className="fw-medium" style={{ color: '#4F46E5' }}>
-                    Privacy Policy
-                  </span>
+                <label className="form-check-label text-muted small" htmlFor="agreeTerms">
+                  I agree to the CareerAI Terms of Service and Privacy Policy
                 </label>
-                {errors.agreeTerms && (
-                  <div className="invalid-feedback">{errors.agreeTerms}</div>
-                )}
               </div>
 
               {/* Submit Button */}
@@ -557,16 +363,12 @@ const Register = () => {
                 type="submit"
                 className="btn w-100 py-2 mb-3 fw-semibold text-white d-flex align-items-center justify-content-center gap-2"
                 style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
-                disabled={isSubmitting}
+                disabled={loading}
               >
-                {isSubmitting ? (
+                {loading ? (
                   <>
-                    <span
-                      className="spinner-border spinner-border-sm"
-                      role="status"
-                      aria-hidden="true"
-                    ></span>
-                    Creating account...
+                    <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    Creating Account...
                   </>
                 ) : (
                   <>
@@ -579,28 +381,12 @@ const Register = () => {
               <div className="text-center border-top pt-3 mt-3">
                 <p className="text-muted small mb-0">
                   Already have an account?{' '}
-                  <Link
-                    to="/login"
-                    className="fw-semibold text-decoration-none"
-                    style={{ color: '#4F46E5' }}
-                  >
+                  <Link to="/login" className="fw-semibold text-decoration-none" style={{ color: '#4F46E5' }}>
                     Sign In
                   </Link>
                 </p>
               </div>
             </form>
-          </div>
-
-          {/* Subtle Footer Admin Link */}
-          <div className="text-center text-muted small mt-4">
-            Are you a platform administrator?{' '}
-            <Link
-              to="/admin-login"
-              className="text-decoration-none fw-medium"
-              style={{ color: '#4F46E5' }}
-            >
-              Admin Portal
-            </Link>
           </div>
         </div>
       </div>

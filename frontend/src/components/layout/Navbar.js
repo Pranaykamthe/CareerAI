@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { resolveMediaUrl } from '../common/ProfilePhotoUploader';
 
 export const Navbar = () => {
   const { user, logout } = useAuth();
@@ -9,9 +10,31 @@ export const Navbar = () => {
 
   const [openMenu, setOpenMenu] = useState(null); // 'resume' | 'jobs' | 'interview' | 'profile' | null
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState(user?.profile_photo_url || '');
   const navRef = useRef(null);
 
-  // Close open dropdowns when clicking outside or changing route
+  // Sync profile photo whenever user object or localStorage updates
+  useEffect(() => {
+    const syncPhoto = () => {
+      try {
+        const raw = localStorage.getItem('careerai_user');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          setPhotoUrl(parsed.profile_photo_url || user?.profile_photo_url || '');
+          return;
+        }
+      } catch {
+        // Ignore storage errors
+      }
+      setPhotoUrl(user?.profile_photo_url || '');
+    };
+
+    syncPhoto();
+    window.addEventListener('careerai-user-updated', syncPhoto);
+    return () => window.removeEventListener('careerai-user-updated', syncPhoto);
+  }, [user]);
+
+  // Close open dropdowns when changing routes or clicking outside
   useEffect(() => {
     setOpenMenu(null);
     setMobileOpen(false);
@@ -47,9 +70,14 @@ export const Navbar = () => {
   );
   const isApplicationsActive = location.pathname === '/applications';
   const isInterviewActive =
-    ['/interview-prep', '/mock-interview', '/question-bank', '/interview-history', '/interviews/history', '/history'].includes(
-      location.pathname
-    ) || location.pathname.startsWith('/interview-report');
+    [
+      '/interview-prep',
+      '/mock-interview',
+      '/question-bank',
+      '/interview-history',
+      '/interviews/history',
+      '/history',
+    ].includes(location.pathname) || location.pathname.startsWith('/interview-report');
 
   const getPillStyle = (active) => ({
     backgroundColor: active ? '#EEF2FF' : 'transparent',
@@ -81,7 +109,12 @@ export const Navbar = () => {
     };
   };
 
-  const userInitial = (user?.username || user?.email || 'C')[0].toUpperCase();
+  const displayName =
+    [user?.first_name, user?.last_name].filter(Boolean).join(' ') ||
+    user?.username ||
+    'Candidate';
+  const userInitial = (displayName || user?.email || 'C')[0].toUpperCase();
+  const resolvedAvatar = resolveMediaUrl(photoUrl);
 
   return (
     <header
@@ -144,12 +177,7 @@ export const Navbar = () => {
               >
                 <i className="bi bi-file-earmark-text"></i>
                 <span>Resume Studio</span>
-                <i
-                  className={`bi bi-chevron-down small transition ${
-                    openMenu === 'resume' ? 'rotate-180' : ''
-                  }`}
-                  style={{ fontSize: '11px' }}
-                ></i>
+                <i className="bi bi-chevron-down" style={{ fontSize: '11px' }}></i>
               </button>
 
               {openMenu === 'resume' && (
@@ -171,7 +199,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">My Resumes</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Upload, manage & set primary CV
+                        Upload, manage &amp; set primary CV
                       </div>
                     </div>
                   </Link>
@@ -184,7 +212,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">ATS Score Analyzer</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Keyword audit & formatting check
+                        Keyword audit &amp; formatting check
                       </div>
                     </div>
                   </Link>
@@ -226,7 +254,7 @@ export const Navbar = () => {
                 onClick={() => toggleMenu('jobs')}
               >
                 <i className="bi bi-briefcase"></i>
-                <span>Jobs & Match</span>
+                <span>Jobs &amp; Match</span>
                 <i className="bi bi-chevron-down" style={{ fontSize: '11px' }}></i>
               </button>
 
@@ -249,7 +277,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">Browse Job Catalog</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Explore open roles & descriptions
+                        Explore open roles &amp; descriptions
                       </div>
                     </div>
                   </Link>
@@ -262,7 +290,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">Smart Job Matching</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        AI compatibility scores & skill gaps
+                        AI compatibility scores &amp; skill gaps
                       </div>
                     </div>
                   </Link>
@@ -312,7 +340,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">Interview Prep Hub</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        STAR framework & role tracks
+                        STAR framework &amp; role tracks
                       </div>
                     </div>
                   </Link>
@@ -325,7 +353,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">Live AI Mock Interview</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Real-time Q&A with instant grading
+                        Real-time Q&amp;A with instant grading
                       </div>
                     </div>
                   </Link>
@@ -338,7 +366,7 @@ export const Navbar = () => {
                     <div>
                       <div className="small fw-semibold">Question Bank</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Curated HR, Behavioral & Tech bank
+                        Curated HR, Behavioral &amp; Tech bank
                       </div>
                     </div>
                   </Link>
@@ -357,9 +385,9 @@ export const Navbar = () => {
                   >
                     <i className="bi bi-clock-history mt-1" style={{ color: '#4F46E5' }}></i>
                     <div>
-                      <div className="small fw-semibold">Session History & Reports</div>
+                      <div className="small fw-semibold">Session History &amp; Reports</div>
                       <div className="text-muted" style={{ fontSize: '11.5px' }}>
-                        Past transcripts & readiness trends
+                        Past transcripts &amp; readiness trends
                       </div>
                     </div>
                   </Link>
@@ -398,22 +426,31 @@ export const Navbar = () => {
                   transition: 'border-color 0.15s ease',
                 }}
               >
-                <div
-                  className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
-                  style={{
-                    width: '30px',
-                    height: '30px',
-                    fontSize: '13px',
-                    backgroundColor: '#4F46E5',
-                  }}
-                >
-                  {userInitial}
-                </div>
+                {resolvedAvatar ? (
+                  <img
+                    src={resolvedAvatar}
+                    alt={displayName}
+                    className="rounded-circle object-fit-cover"
+                    style={{ width: '30px', height: '30px' }}
+                  />
+                ) : (
+                  <div
+                    className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold"
+                    style={{
+                      width: '30px',
+                      height: '30px',
+                      fontSize: '13px',
+                      backgroundColor: '#4F46E5',
+                    }}
+                  >
+                    {userInitial}
+                  </div>
+                )}
                 <span
                   className="small fw-semibold text-dark d-none d-md-inline text-truncate"
-                  style={{ maxWidth: '110px' }}
+                  style={{ maxWidth: '115px' }}
                 >
-                  {user?.username || 'Candidate'}
+                  {displayName}
                 </span>
                 <i className="bi bi-chevron-down text-muted" style={{ fontSize: '11px' }}></i>
               </button>
@@ -422,18 +459,38 @@ export const Navbar = () => {
                 <div
                   className="position-absolute end-0 mt-2 bg-white p-2 shadow-lg"
                   style={{
-                    width: '240px',
+                    width: '245px',
                     borderRadius: '14px',
                     border: '1px solid #E2E8F0',
                     zIndex: 1050,
                   }}
                 >
-                  <div className="px-3 py-2 border-bottom mb-1">
-                    <div className="small fw-bold text-dark text-truncate">
-                      {user?.username || 'Candidate'}
-                    </div>
-                    <div className="text-muted text-truncate" style={{ fontSize: '11.5px' }}>
-                      {user?.email || 'candidate@careerai.com'}
+                  <div className="px-3 py-2 border-bottom mb-1 d-flex align-items-center gap-2">
+                    {resolvedAvatar ? (
+                      <img
+                        src={resolvedAvatar}
+                        alt={displayName}
+                        className="rounded-circle object-fit-cover flex-shrink-0"
+                        style={{ width: '36px', height: '36px' }}
+                      />
+                    ) : (
+                      <div
+                        className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                        style={{
+                          width: '36px',
+                          height: '36px',
+                          fontSize: '14px',
+                          backgroundColor: '#4F46E5',
+                        }}
+                      >
+                        {userInitial}
+                      </div>
+                    )}
+                    <div className="overflow-hidden">
+                      <div className="small fw-bold text-dark text-truncate">{displayName}</div>
+                      <div className="text-muted text-truncate" style={{ fontSize: '11.5px' }}>
+                        {user?.email || 'candidate@careerai.com'}
+                      </div>
                     </div>
                   </div>
 
@@ -442,7 +499,7 @@ export const Navbar = () => {
                     className="dropdown-item d-flex align-items-center gap-2 py-2 px-3 rounded-3 small fw-medium text-dark"
                   >
                     <i className="bi bi-person-circle" style={{ color: '#4F46E5' }}></i>
-                    My Profile & Skills
+                    My Profile &amp; Photo
                   </Link>
 
                   <Link
@@ -506,46 +563,79 @@ export const Navbar = () => {
               <i className="bi bi-grid-1x2-fill me-2"></i> Dashboard
             </Link>
 
-            <div className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold" style={{ fontSize: '10px' }}>
+            <div
+              className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold"
+              style={{ fontSize: '10px' }}
+            >
               Resume Studio
             </div>
             <Link to="/resumes" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-folder2-open me-2 text-primary"></i> My Resumes
+              <i className="bi bi-folder2-open me-2" style={{ color: '#4F46E5' }}></i> My Resumes
             </Link>
-            <Link to="/resume-analyzer" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-speedometer2 me-2 text-primary"></i> ATS Score Analyzer
+            <Link
+              to="/resume-analyzer"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-speedometer2 me-2" style={{ color: '#4F46E5' }}></i> ATS Score Analyzer
             </Link>
-            <Link to="/resume-builder" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-magic me-2 text-primary"></i> AI Resume Builder
+            <Link
+              to="/resume-builder"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-magic me-2" style={{ color: '#4F46E5' }}></i> AI Resume Builder
             </Link>
 
-            <div className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold" style={{ fontSize: '10px' }}>
-              Jobs & Tracking
+            <div
+              className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold"
+              style={{ fontSize: '10px' }}
+            >
+              Jobs &amp; Tracking
             </div>
             <Link to="/jobs" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-briefcase me-2 text-primary"></i> Browse Jobs
+              <i className="bi bi-briefcase me-2" style={{ color: '#4F46E5' }}></i> Browse Jobs
             </Link>
-            <Link to="/job-matching" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-bullseye me-2 text-primary"></i> Smart Job Matching
+            <Link
+              to="/job-matching"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-bullseye me-2" style={{ color: '#4F46E5' }}></i> Smart Job Matching
             </Link>
-            <Link to="/applications" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-kanban me-2 text-primary"></i> Applications Tracker
+            <Link
+              to="/applications"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-kanban me-2" style={{ color: '#4F46E5' }}></i> Applications Tracker
             </Link>
 
-            <div className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold" style={{ fontSize: '10px' }}>
+            <div
+              className="px-3 pt-2 pb-1 text-uppercase text-muted fw-bold"
+              style={{ fontSize: '10px' }}
+            >
               Interview AI
             </div>
-            <Link to="/interview-prep" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-stars me-2 text-primary"></i> Interview Prep Hub
+            <Link
+              to="/interview-prep"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-stars me-2" style={{ color: '#4F46E5' }}></i> Interview Prep Hub
             </Link>
-            <Link to="/mock-interview" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-camera-video me-2 text-primary"></i> AI Mock Interview
+            <Link
+              to="/mock-interview"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-camera-video me-2" style={{ color: '#4F46E5' }}></i> AI Mock Interview
             </Link>
-            <Link to="/question-bank" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-collection-play me-2 text-primary"></i> Question Bank
+            <Link
+              to="/question-bank"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-collection-play me-2" style={{ color: '#4F46E5' }}></i> Question Bank
             </Link>
-            <Link to="/interview-history" className="text-decoration-none px-3 py-2 rounded-3 small text-dark">
-              <i className="bi bi-clock-history me-2 text-primary"></i> Session History
+            <Link
+              to="/interview-history"
+              className="text-decoration-none px-3 py-2 rounded-3 small text-dark"
+            >
+              <i className="bi bi-clock-history me-2" style={{ color: '#4F46E5' }}></i> Session History
             </Link>
           </div>
         </div>

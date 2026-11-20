@@ -12,7 +12,7 @@ export const Footer = () => {
     >
       <div className="container-fluid px-3 px-lg-5 pt-5 pb-4">
         <div className="row g-4 justify-content-between">
-          {/* Left Column: CareerAI Brand, Tagline & Social Buttons */}
+          {/* Left Column: CareerAI Brand, Tagline & Social Links */}
           <div className="col-12 col-lg-4">
             <Link
               to="/dashboard"
@@ -44,7 +44,7 @@ export const Footer = () => {
               AI-powered career intelligence for resume optimization, smart job matching, and mock interviews.
             </p>
 
-            {/* Rounded Social & Support Icon Buttons */}
+            {/* Rounded Social Icon Buttons */}
             <div className="d-flex align-items-center gap-2">
               <a
                 href="https://linkedin.com"
@@ -97,16 +97,16 @@ export const Footer = () => {
             </div>
           </div>
 
-          {/* Right Side: 3 Structured Navigation Columns */}
+          {/* Right Side: 3 Structured Workspace Columns */}
           <div className="col-12 col-lg-7">
             <div className="row g-4">
-              {/* Column 1: Platform */}
+              {/* Column 1: Resume & Jobs */}
               <div className="col-6 col-sm-4">
                 <h6
                   className="fw-bold mb-3"
                   style={{ fontSize: '13.5px', color: '#0F172A' }}
                 >
-                  Platform
+                  Workspace
                 </h6>
                 <ul className="list-unstyled d-flex flex-column gap-2 mb-0 small">
                   <li>
@@ -124,7 +124,16 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Resume Studio
+                      ATS Score Analyzer
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/resume-builder"
+                      className="text-decoration-none"
+                      style={{ color: '#64748B' }}
+                    >
+                      AI Resume Builder
                     </Link>
                   </li>
                   <li>
@@ -133,7 +142,7 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Job Matching
+                      Smart Job Matching
                     </Link>
                   </li>
                 </ul>
@@ -154,7 +163,7 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Prep Hub
+                      Interview Prep Hub
                     </Link>
                   </li>
                   <li>
@@ -163,7 +172,7 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Mock Interview
+                      Live Mock Interview
                     </Link>
                   </li>
                   <li>
@@ -173,6 +182,15 @@ export const Footer = () => {
                       style={{ color: '#64748B' }}
                     >
                       Question Bank
+                    </Link>
+                  </li>
+                  <li>
+                    <Link
+                      to="/interview-history"
+                      className="text-decoration-none"
+                      style={{ color: '#64748B' }}
+                    >
+                      Session History
                     </Link>
                   </li>
                 </ul>
@@ -193,7 +211,7 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Applications
+                      Application Tracker
                     </Link>
                   </li>
                   <li>
@@ -202,17 +220,17 @@ export const Footer = () => {
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      My Profile
+                      My Profile &amp; Photo
                     </Link>
                   </li>
                   <li>
-                    <a
-                      href="mailto:support@careerai.com"
+                    <Link
+                      to="/"
                       className="text-decoration-none"
                       style={{ color: '#64748B' }}
                     >
-                      Support
-                    </a>
+                      Homepage
+                    </Link>
                   </li>
                 </ul>
               </div>
@@ -220,13 +238,13 @@ export const Footer = () => {
           </div>
         </div>
 
-        {/* Bottom Divider & Status Bar */}
+        {/* Bottom Divider & Live Status Pill */}
         <div
           className="d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3 pt-4 mt-4"
           style={{ borderTop: '1px solid #E2E8F0' }}
         >
           <div className="small" style={{ color: '#64748B' }}>
-            © {new Date().getFullYear()} CareerAI. All rights reserved.
+            &copy; {new Date().getFullYear()} CareerAI. All rights reserved.
           </div>
 
           <div
@@ -247,7 +265,7 @@ export const Footer = () => {
                 boxShadow: '0 0 0 3px rgba(16, 185, 129, 0.18)',
               }}
             ></span>
-            System Operational
+            All Systems Operational
           </div>
         </div>
       </div>

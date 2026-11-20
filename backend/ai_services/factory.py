@@ -1,17 +1,42 @@
 import os
-import re
 import json
 import urllib.request
 import urllib.error
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Explicitly load .env from backend folder
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / '.env')
 
 from .base import BaseLLMService
 from .fallback_evaluator import DeterministicFallbackEvaluator
+
+
+def fallback_extract_profile(raw_text: str, fallback_parsed: dict = None) -> dict:
+    """Deterministic fallback parser if GROQ_API_KEY is missing or unreachable."""
+    parsed = fallback_parsed or {}
+    contact = parsed.get('contact_info', {}) if isinstance(parsed.get('contact_info'), dict) else {}
+    skills = parsed.get('skills', []) if isinstance(parsed.get('skills'), list) else []
+
+    lines = [line.strip() for line in (raw_text or '').splitlines() if line.strip()]
+    guessed_name = lines[0] if lines and len(lines[0].split()) <= 4 else ""
+
+    return {
+        "full_name": guessed_name,
+        "headline": f"Aspiring Software Engineer | {', '.join(skills[:4])}" if skills else "Software Engineer",
+        "target_role": "Software Engineer",
+        "experience_years": 0,
+        "phone": contact.get('phone', ''),
+        "location": contact.get('location', ''),
+        "linkedin_url": contact.get('linkedin', ''),
+        "github_url": contact.get('github', ''),
+        "portfolio_url": contact.get('portfolio', ''),
+        "summary": (raw_text or '')[:320].strip(),
+        "skills": skills[:20],
+        "education": [],
+        "experience": [],
+        "provider": "Deterministic Parser (Fallback)"
+    }
 
 
 class GroqLLMService(BaseLLMService):
@@ -26,10 +51,10 @@ class GroqLLMService(BaseLLMService):
     ]
 
     def __init__(self, api_key: str):
-        self.api_key = api_key.strip().strip('"').strip("'")
+        self.api_key = api_key.strip()
         self.fallback = DeterministicFallbackEvaluator()
 
-    def _call_groq_json(self, system_prompt: str, user_prompt: str, temperature: float = 0.25, timeout: int = 20) -> dict:
+    def _call_groq_json(self, system_prompt: str, user_prompt: str, temperature: float = 0.2) -> dict:
         """Reusable helper for Groq JSON completions using active account models."""
         url = "https://api.groq.com/openai/v1/chat/completions"
         last_error = ""
@@ -44,7 +69,6 @@ class GroqLLMService(BaseLLMService):
                 "temperature": temperature,
                 "response_format": {"type": "json_object"},
             }
-
             try:
                 req = urllib.request.Request(
                     url,
@@ -55,20 +79,17 @@ class GroqLLMService(BaseLLMService):
                         "User-Agent": "Mozilla/5.0",
                     },
                 )
-                with urllib.request.urlopen(req, timeout=timeout) as resp:
+                with urllib.request.urlopen(req, timeout=22) as resp:
                     data = json.loads(resp.read().decode('utf-8'))
-                    raw_content = data["choices"][0]["message"]["content"].strip()
-
-                    # Strip code block wrappers if model emits ```json
-                    if raw_content.startswith("```"):
-                        raw_content = raw_content.strip("`")
-                        if raw_content.startswith("json"):
-                            raw_content = raw_content[4:].strip()
-
-                    parsed = json.loads(raw_content)
+                    raw = data["choices"][0]["message"]["content"].strip()
+                    if raw.startswith("```"):
+                        raw = raw.strip("`")
+                        if raw.startswith("json"):
+                            raw = raw[4:].strip()
+                    parsed = json.loads(raw)
                     parsed["provider"] = "Groq AI"
+                    parsed["model_used"] = model_name
                     return parsed
-
             except urllib.error.HTTPError as http_err:
                 try:
                     err_body = http_err.read().decode('utf-8')
@@ -80,12 +101,73 @@ class GroqLLMService(BaseLLMService):
                 last_error = str(e)
                 continue
 
-        raise RuntimeError(f"Groq API unavailable ({last_error})")
+        raise RuntimeError(f"Groq API unavailable: {last_error}")
 
-    # ==========================================
-    # 1. Phase 12 & 13: Mock Interview Evaluation
-    # ==========================================
+    # ==========================================================
+    # 1. Resume-to-Profile Auto-Fill Extraction (Groq AI)
+    # ==========================================================
+    def extract_profile_from_resume(self, raw_text: str, fallback_parsed: dict = None) -> dict:
+        if not raw_text or len(raw_text.strip()) < 20:
+            return fallback_extract_profile(raw_text, fallback_parsed)
 
+        system_prompt = (
+            "You are an accurate enterprise HR Resume Parser. Extract structured candidate profile fields "
+            "strictly from the provided resume text. Do NOT fabricate companies, degrees, or contact details. "
+            "If a field is not present in the resume, return an empty string, 0, or an empty list. "
+            "Respond ONLY with valid JSON."
+        )
+
+        user_prompt = f"""Extract structured candidate profile data from this resume text:
+
+\"\"\"{raw_text[:12000]}\"\"\"
+
+Return strictly a JSON object matching this exact schema:
+{{
+  "full_name": "<candidate full name or empty string>",
+  "headline": "<concise professional headline e.g. Full-Stack Developer | Python, Django & React>",
+  "target_role": "<best matching primary job title e.g. Software Engineer>",
+  "experience_years": <number (integer or float) of total professional years of experience, 0 if fresher>,
+  "phone": "<phone number or empty string>",
+  "location": "<city, state/country or empty string>",
+  "linkedin_url": "<LinkedIn URL empty or string>",
+  "github_url": "<GitHub URL empty or string>",
+  "portfolio_url": "<Portfolio/website URL empty or string>",
+  "summary": "<2-4 sentence professional bio/summary extracted or synthesized strictly from the resume>",
+  "skills": ["<skill 1>", "<skill 2>", "<skill 3>"],
+  "education": [
+    {{
+      "degree": "<degree name e.g. B.Tech in Computer Science>",
+      "institution": "<college/university name>",
+      "year": "<graduation year or duration e.g. 2024>",
+      "grade": "<CGPA/percentage else empty if mentioned, string>"
+    }}
+  ],
+  "experience": [
+    {{
+      "role": "<job or internship title>",
+      "company": "<company or organization name>",
+      "duration": "<start - end dates>",
+      "location": "<location if mentioned, else empty string>",
+      "description": "<concise summary of responsibilities & achievements>"
+    }}
+  ]
+}}"""
+
+        try:
+            result = self._call_groq_json(system_prompt, user_prompt, temperature=0.1)
+            if not isinstance(result.get("skills"), list):
+                result["skills"] = []
+            if not isinstance(result.get("education"), list):
+                result["education"] = []
+            if not isinstance(result.get("experience"), list):
+                result["experience"] = []
+            return result
+        except Exception:
+            return fallback_extract_profile(raw_text, fallback_parsed)
+
+    # ==========================================================
+    # 2. Mock Interview Answer Evaluation
+    # ==========================================================
     def evaluate_answer(
         self,
         question_text: str,
@@ -104,7 +186,6 @@ CRITICAL EVALUATION CRITERIA FOR BEHAVIORAL / HR QUESTIONS:
 2. Communication Clarity & Professional Tone: Is the response concise, confident, and professional?
 3. Action & Impact: Did the candidate highlight their individual contribution ('I' vs 'we') and quantifiable outcomes?
 """
-
         points_str = json.dumps(ideal_points) if isinstance(ideal_points, list) else str(ideal_points)
 
         prompt = f"""You are an expert executive technical recruiter and senior hiring manager conducting an interview evaluation.
@@ -112,25 +193,19 @@ Role Target: {role_target}
 Question Category: {category}
 Difficulty Level: {difficulty}
 
-Interview Question:
-"{question_text}"
-
-Core Talking Points / Ideal Concepts:
-{points_str}
-
-Benchmark Sample Answer:
-"{sample_answer}"
-
-Candidate's Submitted Answer:
-"{candidate_answer}"
+Interview Question: "{question_text}"
+Core Talking Points / Ideal Concepts: {points_str}
+Benchmark Sample Answer: "{sample_answer}"
+Candidate's Submitted Answer: "{candidate_answer}"
 {star_guideline}
-Evaluate the candidate's answer objectively. Return ONLY a valid JSON object matching this exact schema (no markdown, no code fences):
+
+Evaluate the candidate's answer objectively. Return ONLY a valid JSON object matching this exact schema:
 {{
-  "score": <integer between 0 and 100 representing overall quality and depth>,
+  "score": <integer between 0 and 100>,
   "feedback": "<concise 2-3 sentence overall critique>",
   "strengths": ["<strength 1>", "<strength 2>"],
   "weaknesses": ["<weakness or missing point 1>", "<weakness 2>"],
-  "better_answer": "<an exemplary model response that adheres to best practices and the STAR framework>"
+  "better_answer": "<an exemplary model response adhering to best practices and the STAR framework>"
 }}"""
 
         try:
@@ -138,7 +213,6 @@ Evaluate the candidate's answer objectively. Return ONLY a valid JSON object mat
                 "You are a strict, helpful interview evaluator. You only respond with raw, valid JSON.",
                 prompt,
                 temperature=0.2,
-                timeout=15,
             )
         except Exception as e:
             res = self.fallback.evaluate_answer(
@@ -147,10 +221,9 @@ Evaluate the candidate's answer objectively. Return ONLY a valid JSON object mat
             res["provider"] = f"Deterministic Heuristic Engine (Fallback: {str(e)[:60]})"
             return res
 
-    # ==========================================
-    # 2. Phase 19: AI Resume Section Improver
-    # ==========================================
-
+    # ==========================================================
+    # 3. AI Resume Builder Section & ATS Improvements
+    # ==========================================================
     def improve_resume_section(
         self,
         section: str,
@@ -168,7 +241,7 @@ Original Content:
 {content}
 {ats_context}
 
-Rewrite the content to maximize ATS compatibility, use strong action verbs, and quantify achievements (XYZ formula: Accomplished X measured by Y by doing Z). For work_experience or projects, format bullet points starting with '- '. Do NOT invent fake companies or degrees.
+Rewrite the content to maximize ATS compatibility, use strong action verbs, and quantify achievements (XYZ formula). Do NOT invent fake companies or degrees.
 Return ONLY valid JSON:
 {{
   "improved_text": "<rewritten content>",
@@ -180,14 +253,14 @@ Return ONLY valid JSON:
                 "You are an expert ATS resume optimizer. Respond strictly in valid JSON.",
                 prompt,
                 temperature=0.25,
-                timeout=20,
             )
         except Exception:
-            return _fallback_improve_section(section, action, content, target_role)
-
-    # ==========================================
-    # 3. Phase 19: One-Click ATS Auto-Fix
-    # ==========================================
+            return {
+                "improved_text": content,
+                "explanation": "Groq API temporarily unavailable. Please verify your GROQ_API_KEY and try again.",
+                "estimated_score_boost": 0,
+                "provider": "Fallback",
+            }
 
     def auto_fix_ats_issues(
         self,
@@ -203,7 +276,7 @@ ATS Recommendations: {json.dumps(recommendations)}
 Current Resume JSON:
 {json.dumps(draft_data)}
 
-Improve the resume to resolve the ATS weaknesses (strengthen summary, add categorized skills if thin, rewrite experience & project bullets with strong action verbs and measurable metrics, and ensure total content exceeds 350 words). Keep all factual names, dates, companies, and education accurate.
+Improve the resume to resolve the ATS weaknesses. Keep all factual names, dates, companies, and education accurate.
 Return ONLY valid JSON with these exact keys:
 {{
   "summary": "<improved professional summary>",
@@ -212,7 +285,7 @@ Return ONLY valid JSON with these exact keys:
     "Frontend": "<comma separated>",
     "Backend": "<comma separated>",
     "Database": "<comma separated>",
-    "Tools": "<comma separated>"
+    "Tools & Cloud": "<comma separated>"
   }},
   "work_experience": [
     {{
@@ -220,7 +293,7 @@ Return ONLY valid JSON with these exact keys:
       "company": "<same company>",
       "location": "<same location>",
       "duration": "<same duration>",
-      "bullets": ["<improved bullet 1>", "<improved bullet 2>", "<improved bullet 3>"]
+      "bullets": ["<improved bullet 1>", "<improved bullet 2>"]
     }}
   ],
   "projects": [
@@ -231,82 +304,25 @@ Return ONLY valid JSON with these exact keys:
     }}
   ],
   "changes_summary": ["<change 1>", "<change 2>", "<change 3>"],
-  "estimated_new_score": <integer 82 to 96>
+  "estimated_new_score": <integer 80 to 96>
 }}"""
-        try:
-            return self._call_groq_json(
-                "You are an expert ATS resume optimizer. Respond strictly in valid JSON.",
-                prompt,
-                temperature=0.25,
-                timeout=25,
-            )
-        except Exception:
-            return _fallback_auto_fix_ats(draft_data, target_role)
-
-
-# ==========================================
-# Local Safety-Net Helpers for Phase 19
-# ==========================================
-
-def _fallback_improve_section(section: str, action: str, content: str, target_role: str) -> dict:
-    lines = [line.strip().lstrip("-•* ") for line in content.splitlines() if line.strip()]
-    if section == "summary":
-        improved = (
-            f"Results-driven {target_role} with proven expertise in full-stack development, "
-            f"scalable REST APIs, and relational databases. {content.strip()} "
-            f"Track record of improving system latency by 35% and delivering reliable software."
+        return self._call_groq_json(
+            "You are an expert ATS resume optimizer. Respond strictly in valid JSON.",
+            prompt,
+            temperature=0.25,
         )
-    else:
-        verbs = ["Architected", "Engineered", "Spearheaded", "Optimized", "Automated"]
-        improved = "\n".join(
-            f"- {verbs[i % len(verbs)]} and {line[0].lower() + line[1:] if len(line) > 1 else line}, improving throughput by 30%."
-            for i, line in enumerate(lines)
-        )
-    return {
-        "improved_text": improved,
-        "explanation": f"Applied '{action}' with strong action verbs and quantified XYZ metrics.",
-        "estimated_score_boost": 7,
-        "provider": "Deterministic Heuristic Engine (Fallback)",
-    }
-
-
-def _fallback_auto_fix_ats(draft_data: dict, target_role: str) -> dict:
-    summary = (
-        f"Impact-oriented {target_role} skilled in Python, Django, React, RESTful APIs, and SQL. "
-        f"Experienced in architecting scalable web applications serving 50K+ active users, optimizing database queries "
-        f"by 38%, and automating CI/CD workflows across agile engineering teams."
-    )
-    work_exp = []
-    for exp in draft_data.get("work_experience", []):
-        item = dict(exp)
-        item["bullets"] = [
-            "Architected and deployed full-stack React and Django web applications serving 50K+ daily active users with 99.9% uptime.",
-            "Refactored PostgreSQL queries and API caching layers, reducing endpoint response latency by 38%.",
-            "Automated testing and Docker container deployments, cutting release turnaround time by 45%.",
-        ]
-        work_exp.append(item)
-
-    return {
-        "summary": summary,
-        "skills": draft_data.get("skills", {}),
-        "work_experience": work_exp,
-        "projects": draft_data.get("projects", []),
-        "changes_summary": [
-            "Added quantified XYZ impact metrics (38% latency reduction, 50K+ users, 99.9% uptime)",
-            "Replaced passive phrasing with strong ATS action verbs (Architected, Refactored, Automated)",
-            "Expanded technical bullet points to satisfy the 350+ word ATS completeness threshold",
-        ],
-        "estimated_new_score": 92,
-        "provider": "Deterministic Heuristic Engine (Fallback)",
-    }
 
 
 def get_ai_service() -> BaseLLMService:
     """
     Factory function: returns Groq adapter if GROQ_API_KEY is configured in .env,
-    otherwise returns the DeterministicFallbackEvaluator.
+    otherwise returns DeterministicFallbackEvaluator with profile extraction attached.
     """
-    groq_key = os.getenv('GROQ_API_KEY', '').strip().strip('"').strip("'")
+    groq_key = os.getenv('GROQ_API_KEY', '').strip()
     if groq_key:
         return GroqLLMService(api_key=groq_key)
-    return DeterministicFallbackEvaluator()
+
+    fallback = DeterministicFallbackEvaluator()
+    if not hasattr(fallback, 'extract_profile_from_resume'):
+        fallback.extract_profile_from_resume = fallback_extract_profile
+    return fallback

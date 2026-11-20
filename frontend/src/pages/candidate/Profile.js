@@ -1,208 +1,315 @@
-import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import api from '../../services/api';
-import { useAuth } from '../../context/AuthContext';
+import { resumeService } from '../../services/resumeService';
+import ProfilePhotoUploader from '../../components/common/ProfilePhotoUploader';
 
 const Profile = () => {
-  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState(null); // { type: 'success' | 'danger', message: string }
-  const [skillInput, setSkillInput] = useState('');
+  const [parsingResume, setParsingResume] = useState(false);
+  const [aiBadge, setAiBadge] = useState('');
+  const [toast, setToast] = useState(null);
 
-  const [formData, setFormData] = useState({
+  const [resumes, setResumes] = useState([]);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+  const fileInputRef = useRef(null);
+
+  const [newSkill, setNewSkill] = useState('');
+  const [profile, setProfile] = useState({
     full_name: '',
     email: '',
-    phone: '',
-    location: '',
+    profile_photo_url: '',
     headline: '',
     target_role: '',
     experience_years: 0,
+    phone: '',
+    location: '',
     linkedin_url: '',
+    github_url: '',
     portfolio_url: '',
-    bio: '',
+    summary: '',
     skills: [],
     education: [],
     experience: [],
-    profile_completion: 0,
   });
 
   const showToast = (type, message) => {
     setToast({ type, message });
-    setTimeout(() => setToast(null), 4000);
-  };
-
-  const fetchProfile = async () => {
-    setLoading(true);
-    try {
-      let res;
-      try {
-        res = await api.get('/auth/profile/');
-      } catch (err) {
-        if (err.response?.status === 404) {
-          res = await api.get('/profile/');
-        } else {
-          throw err;
-        }
-      }
-
-      const d = res.data || {};
-      const resolvedSkills = Array.isArray(d.skills_list)
-        ? d.skills_list
-        : Array.isArray(d.skills)
-        ? d.skills
-        : [];
-
-      const resolvedName =
-        d.full_name ||
-        [d.first_name, d.last_name].filter(Boolean).join(' ') ||
-        d.username ||
-        user?.username ||
-        '';
-
-      setFormData({
-        full_name: resolvedName,
-        email: d.email || user?.email || '',
-        phone: d.phone || '',
-        location: d.location || '',
-        headline: d.headline || '',
-        target_role: d.target_role || '',
-        experience_years: d.experience_years ?? 0,
-        linkedin_url: d.linkedin_url || '',
-        portfolio_url: d.portfolio_url || '',
-        bio: d.bio || d.summary || '',
-        skills: resolvedSkills,
-        education: Array.isArray(d.education) ? d.education : [],
-        experience: Array.isArray(d.experience) ? d.experience : [],
-        profile_completion: d.profile_completion ?? 0,
-      });
-    } catch (err) {
-      showToast('danger', 'Unable to load profile details. Please check your connection.');
-    } finally {
-      setLoading(false);
-    }
+    setTimeout(() => setToast(null), 5000);
   };
 
   useEffect(() => {
-    fetchProfile();
+    const fetchProfileAndResumes = async () => {
+      setLoading(true);
+      try {
+        const [profileRes, resumesData] = await Promise.all([
+          api.get('/auth/profile/'),
+          resumeService.getResumes().catch(() => []),
+        ]);
+
+        const data = profileRes.data || {};
+        const userObj = data.user || {};
+        const pObj = data.profile || data;
+
+        const fullName =
+          pObj.full_name ||
+          [userObj.first_name, userObj.last_name].filter(Boolean).join(' ') ||
+          userObj.username ||
+          '';
+
+        const skillsArr = Array.isArray(pObj.skills_list)
+          ? pObj.skills_list
+          : Array.isArray(pObj.skills)
+          ? pObj.skills
+          : [];
+
+        const eduArr = Array.isArray(pObj.education) ? pObj.education : [];
+        const expArr = Array.isArray(pObj.work_experience)
+          ? pObj.work_experience
+          : Array.isArray(pObj.experience)
+          ? pObj.experience
+          : [];
+
+        setProfile({
+          full_name: fullName,
+          email: userObj.email || pObj.email || '',
+          profile_photo_url: pObj.profile_photo_url || userObj.profile_photo_url || '',
+          headline: pObj.headline || '',
+          target_role: pObj.target_role || '',
+          experience_years: pObj.experience_years ?? 0,
+          phone: pObj.phone || userObj.phone || '',
+          location: pObj.location || '',
+          linkedin_url: pObj.linkedin_url || pObj.linkedin || '',
+          github_url: pObj.github_url || pObj.github || '',
+          portfolio_url: pObj.portfolio_url || pObj.portfolio || '',
+          summary: pObj.summary || pObj.bio || '',
+          skills: skillsArr,
+          education: eduArr,
+          experience: expArr,
+        });
+
+        const resumeList = Array.isArray(resumesData)
+          ? resumesData
+          : resumesData?.results || [];
+        setResumes(resumeList);
+        if (resumeList.length > 0) {
+          const primary = resumeList.find((r) => r.is_primary) || resumeList[0];
+          setSelectedResumeId(String(primary.id));
+        }
+      } catch (err) {
+        showToast('danger', 'Unable to load profile data. Please refresh.');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProfileAndResumes();
   }, []);
 
-  const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: name === 'experience_years' ? Number(value) : value,
-    }));
+  const applyExtractedDataToState = (extracted, providerLabel) => {
+    if (!extracted) return;
+
+    setProfile((prev) => {
+      const mergedSkills = Array.from(
+        new Set([...(prev.skills || []), ...(extracted.skills || [])])
+      );
+
+      return {
+        ...prev,
+        full_name: extracted.full_name || prev.full_name,
+        headline: extracted.headline || prev.headline,
+        target_role: extracted.target_role || prev.target_role,
+        experience_years:
+          extracted.experience_years !== undefined && extracted.experience_years !== null
+            ? extracted.experience_years
+            : prev.experience_years,
+        phone: extracted.phone || prev.phone,
+        location: extracted.location || prev.location,
+        linkedin_url: extracted.linkedin_url || prev.linkedin_url,
+        github_url: extracted.github_url || prev.github_url,
+        portfolio_url: extracted.portfolio_url || prev.portfolio_url,
+        summary: extracted.summary || prev.summary,
+        skills: mergedSkills,
+        education:
+          Array.isArray(extracted.education) && extracted.education.length > 0
+            ? extracted.education
+            : prev.education,
+        experience:
+          Array.isArray(extracted.experience) && extracted.experience.length > 0
+            ? extracted.experience
+            : prev.experience,
+      };
+    });
+
+    setAiBadge(providerLabel || 'Groq AI');
   };
 
-  const handleAddSkill = (e) => {
-    e.preventDefault();
-    const trimmed = skillInput.trim();
-    if (!trimmed) return;
-    if (formData.skills.some((s) => s.toLowerCase() === trimmed.toLowerCase())) {
-      setSkillInput('');
+  const handleDirectResumeUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setParsingResume(true);
+    try {
+      const res = await resumeService.autofillProfileFromFile(file, true);
+      applyExtractedDataToState(res.extracted_profile, res.provider);
+
+      const updatedResumes = await resumeService.getResumes().catch(() => resumes);
+      const list = Array.isArray(updatedResumes)
+        ? updatedResumes
+        : updatedResumes?.results || [];
+      setResumes(list);
+      if (res.resume_id) setSelectedResumeId(String(res.resume_id));
+
+      showToast(
+        'success',
+        res.message || 'Resume parsed with Groq AI and profile auto-filled!'
+      );
+    } catch (err) {
+      showToast(
+        'danger',
+        err.response?.data?.error || 'Failed to parse resume with Groq AI.'
+      );
+    } finally {
+      setParsingResume(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleAutofillFromExisting = async () => {
+    if (!selectedResumeId) {
+      showToast('warning', 'Please select or upload a resume first.');
       return;
     }
-    setFormData((prev) => ({ ...prev, skills: [...prev.skills, trimmed] }));
-    setSkillInput('');
+
+    setParsingResume(true);
+    try {
+      const res = await resumeService.autofillProfileFromExisting(selectedResumeId, true);
+      applyExtractedDataToState(res.extracted_profile, res.provider);
+      showToast(
+        'success',
+        res.message || 'Profile auto-filled from your selected resume via Groq AI!'
+      );
+    } catch (err) {
+      showToast(
+        'danger',
+        err.response?.data?.error || 'Could not auto-fill from the selected resume.'
+      );
+    } finally {
+      setParsingResume(false);
+    }
   };
 
-  const handleRemoveSkill = (skillToRemove) => {
-    setFormData((prev) => ({
-      ...prev,
-      skills: prev.skills.filter((s) => s !== skillToRemove),
-    }));
-  };
-
-  // Dynamic Education Items
-  const addEducation = () => {
-    setFormData((prev) => ({
-      ...prev,
-      education: [...prev.education, { institution: '', degree: '', year: '' }],
-    }));
-  };
-
-  const updateEducation = (idx, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      education: prev.education.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
-    }));
-  };
-
-  const removeEducation = (idx) => {
-    setFormData((prev) => ({
-      ...prev,
-      education: prev.education.filter((_, i) => i !== idx),
-    }));
-  };
-
-  // Dynamic Experience Items
-  const addExperience = () => {
-    setFormData((prev) => ({
-      ...prev,
-      experience: [...prev.experience, { role: '', company: '', duration: '', description: '' }],
-    }));
-  };
-
-  const updateExperience = (idx, field, value) => {
-    setFormData((prev) => ({
-      ...prev,
-      experience: prev.experience.map((item, i) => (i === idx ? { ...item, [field]: value } : item)),
-    }));
-  };
-
-  const removeExperience = (idx) => {
-    setFormData((prev) => ({
-      ...prev,
-      experience: prev.experience.filter((_, i) => i !== idx),
-    }));
-  };
-
-  const handleSubmit = async (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
       const payload = {
-        ...formData,
-        skills_list: formData.skills,
-        skills: formData.skills,
+        full_name: profile.full_name,
+        headline: profile.headline,
+        target_role: profile.target_role,
+        experience_years: Number(profile.experience_years) || 0,
+        phone: profile.phone,
+        location: profile.location,
+        linkedin_url: profile.linkedin_url,
+        github_url: profile.github_url,
+        portfolio_url: profile.portfolio_url,
+        summary: profile.summary,
+        bio: profile.summary,
+        skills: profile.skills,
+        skills_list: profile.skills,
+        education: profile.education,
+        experience: profile.experience,
+        work_experience: profile.experience,
       };
-      let res;
-      try {
-        res = await api.put('/auth/profile/', payload);
-      } catch (err) {
-        if (err.response?.status === 404) {
-          res = await api.put('/profile/', payload);
-        } else {
-          throw err;
-        }
-      }
-      if (res.data?.profile_completion !== undefined) {
-        setFormData((prev) => ({ ...prev, profile_completion: res.data.profile_completion }));
-      }
-      showToast('success', 'Candidate profile saved and career readiness updated!');
+      await api.put('/auth/profile/', payload);
+      showToast('success', 'Candidate profile saved successfully!');
     } catch (err) {
-      showToast('danger', err.response?.data?.detail || 'Failed to update profile.');
+      showToast('danger', 'Failed to save profile changes. Please verify your inputs.');
     } finally {
       setSaving(false);
     }
   };
 
-  // Local fallback completeness computation if backend returns 0
-  const computedCompletion = (() => {
-    if (formData.profile_completion > 0) return formData.profile_completion;
-    let score = 20;
-    if (formData.full_name) score += 15;
-    if (formData.headline) score += 15;
-    if (formData.target_role) score += 15;
-    if (formData.skills.length > 0) score += 20;
-    if (formData.bio) score += 15;
-    return Math.min(100, score);
-  })();
+  const handleAddSkill = (e) => {
+    e.preventDefault();
+    const trimmed = newSkill.trim();
+    if (!trimmed || profile.skills.includes(trimmed)) return;
+    setProfile((prev) => ({ ...prev, skills: [...prev.skills, trimmed] }));
+    setNewSkill('');
+  };
 
-  const radius = 38;
+  const handleRemoveSkill = (skillToRemove) => {
+    setProfile((prev) => ({
+      ...prev,
+      skills: prev.skills.filter((s) => s !== skillToRemove),
+    }));
+  };
+
+  const addEducation = () => {
+    setProfile((prev) => ({
+      ...prev,
+      education: [
+        ...prev.education,
+        { degree: '', institution: '', year: '', grade: '' },
+      ],
+    }));
+  };
+
+  const updateEducation = (index, field, value) => {
+    const updated = [...profile.education];
+    updated[index] = { ...updated[index], [field]: value };
+    setProfile((prev) => ({ ...prev, education: updated }));
+  };
+
+  const removeEducation = (index) => {
+    setProfile((prev) => ({
+      ...prev,
+      education: prev.education.filter((_, i) => i !== index),
+    }));
+  };
+
+  const addExperience = () => {
+    setProfile((prev) => ({
+      ...prev,
+      experience: [
+        ...prev.experience,
+        { role: '', company: '', duration: '', location: '', description: '' },
+      ],
+    }));
+  };
+
+  const updateExperience = (index, field, value) => {
+    const updated = [...profile.experience];
+    updated[index] = { ...updated[index], [field]: value };
+    setProfile((prev) => ({ ...prev, experience: updated }));
+  };
+
+  const removeExperience = (index) => {
+    setProfile((prev) => ({
+      ...prev,
+      experience: prev.experience.filter((_, i) => i !== index),
+    }));
+  };
+
+  const calculateCompleteness = () => {
+    let score = 0;
+    if (profile.profile_photo_url) score += 5;
+    if (profile.full_name?.trim()) score += 10;
+    if (profile.headline?.trim()) score += 15;
+    if (profile.target_role?.trim()) score += 10;
+    if (profile.phone?.trim() || profile.location?.trim()) score += 10;
+    if (profile.linkedin_url?.trim() || profile.github_url?.trim()) score += 10;
+    if (profile.summary?.trim()) score += 15;
+    if (profile.skills?.length >= 3) score += 10;
+    if (profile.education?.length > 0) score += 10;
+    if (profile.experience?.length > 0) score += 5;
+    return Math.min(100, score);
+  };
+
+  const completeness = calculateCompleteness();
+  const radius = 34;
   const circumference = 2 * Math.PI * radius;
-  const strokeOffset = circumference - (computedCompletion / 100) * circumference;
+  const strokeDashoffset = circumference - (completeness / 100) * circumference;
 
   const cardStyle = {
     borderRadius: '16px',
@@ -212,374 +319,435 @@ const Profile = () => {
 
   if (loading) {
     return (
-      <div className="min-vh-100 d-flex flex-column justify-content-center align-items-center" style={{ backgroundColor: '#F8FAFC' }}>
+      <div
+        className="min-vh-100 d-flex justify-content-center align-items-center"
+        style={{ backgroundColor: '#F8FAFC' }}
+      >
         <div className="spinner-border" style={{ color: '#4F46E5' }} role="status"></div>
-        <p className="text-muted small mt-3">Loading candidate profile...</p>
       </div>
     );
   }
 
   return (
-    <div className="py-4" style={{ backgroundColor: '#F8FAFC' }}>
-      <div className="container">
-        {/* Toast Banner */}
+    <div className="py-4" style={{ backgroundColor: '#F8FAFC', minHeight: '100vh' }}>
+      <div className="container" style={{ maxWidth: '1120px' }}>
+        {/* Inline Toast Alert */}
         {toast && (
           <div
             className={`alert alert-${toast.type} d-flex align-items-center justify-content-between rounded-4 shadow-sm mb-4`}
-            role="alert"
           >
-            <div className="small fw-semibold">
-              <i className={`bi ${toast.type === 'success' ? 'bi-check-circle-fill' : 'bi-exclamation-triangle-fill'} me-2`}></i>
-              {toast.message}
+            <div className="d-flex align-items-center gap-2 small fw-semibold">
+              <i
+                className={`bi ${
+                  toast.type === 'success'
+                    ? 'bi-check-circle-fill'
+                    : 'bi-exclamation-triangle-fill'
+                }`}
+              ></i>
+              <span>{toast.message}</span>
             </div>
-            <button type="button" className="btn-close btn-sm" onClick={() => setToast(null)}></button>
+            <button
+              type="button"
+              className="btn-close btn-sm"
+              onClick={() => setToast(null)}
+            ></button>
           </div>
         )}
 
-        {/* Header */}
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
-          <div>
-            <span
-              className="badge rounded-pill px-3 py-1 fw-semibold mb-1"
-              style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '11.5px' }}
-            >
-              <i className="bi bi-person-badge me-1"></i> Candidate Identity
-            </span>
-            <h2 className="fw-bold mb-1" style={{ color: '#0F172A', letterSpacing: '-0.02em' }}>
-              Candidate Profile &amp; Skills
-            </h2>
-            <p className="text-muted small mb-0">
-              Keep your target role, skills inventory, and background updated for accurate job matching.
-            </p>
+        {/* Header: Profile Photo Uploader + Name + Completeness Ring */}
+        <div
+          className="card bg-white p-4 mb-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-4"
+          style={cardStyle}
+        >
+          <div className="d-flex flex-column flex-sm-row align-items-sm-center gap-4">
+            <ProfilePhotoUploader
+              photoUrl={profile.profile_photo_url}
+              fullName={profile.full_name}
+              email={profile.email}
+              role="candidate"
+              size={84}
+              onPhotoUpdated={(newUrl) =>
+                setProfile((prev) => ({ ...prev, profile_photo_url: newUrl }))
+              }
+              onNotify={showToast}
+            />
+
+            <div>
+              <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
+                <h3 className="fw-bold text-dark mb-0">
+                  {profile.full_name || 'Candidate Profile'}
+                </h3>
+                {aiBadge && (
+                  <span
+                    className="badge rounded-pill px-2.5 py-1 fw-semibold"
+                    style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '11px' }}
+                  >
+                    <i className="bi bi-stars me-1"></i>Auto-Filled by {aiBadge}
+                  </span>
+                )}
+              </div>
+              <p className="text-muted small mb-0">
+                {profile.headline ||
+                  'Upload a profile photo and complete your details or auto-import from your resume.'}
+              </p>
+            </div>
           </div>
 
-          <div className="d-flex gap-2">
-            <Link
-              to="/resume-builder"
-              className="btn btn-sm bg-white fw-semibold px-3 py-2"
-              style={{ border: '1px solid #CBD5E1', color: '#334155', borderRadius: '10px' }}
-            >
-              <i className="bi bi-magic me-1" style={{ color: '#4F46E5' }}></i> Open AI Resume Builder
-            </Link>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              disabled={saving}
-              className="btn btn-sm text-white fw-semibold px-4 py-2 shadow-sm"
-              style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
-            >
-              {saving ? (
-                <>
-                  <span className="spinner-border spinner-border-sm me-2"></span>Saving...
-                </>
-              ) : (
-                <>
-                  <i className="bi bi-check2-circle me-1"></i> Save Profile
-                </>
-              )}
-            </button>
+          {/* SVG Completeness Ring */}
+          <div className="d-flex align-items-center gap-3 flex-shrink-0">
+            <div className="position-relative" style={{ width: '80px', height: '80px' }}>
+              <svg width="80" height="80" viewBox="0 0 80 80">
+                <circle
+                  cx="40"
+                  cy="40"
+                  r={radius}
+                  fill="none"
+                  stroke="#E2E8F0"
+                  strokeWidth="7"
+                />
+                <circle
+                  cx="40"
+                  cy="40"
+                  r={radius}
+                  fill="none"
+                  stroke={completeness >= 80 ? '#10B981' : '#4F46E5'}
+                  strokeWidth="7"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                  transform="rotate(-90 40 40)"
+                />
+              </svg>
+              <div
+                className="position-absolute top-50 start-50 translate-middle fw-bold text-dark"
+                style={{ fontSize: '14px' }}
+              >
+                {completeness}%
+              </div>
+            </div>
+            <div>
+              <div className="fw-bold text-dark small">Profile Readiness</div>
+              <div className="text-muted" style={{ fontSize: '12px' }}>
+                {completeness >= 80
+                  ? 'Ready for AI Job Matching'
+                  : 'Add photo & details to boost score'}
+              </div>
+            </div>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit}>
-          <div className="row g-4">
-            {/* Left Summary Column (4 cols) */}
-            <div className="col-lg-4">
-              {/* Profile Strength Card */}
-              <div className="card bg-white p-4 text-center mb-4" style={cardStyle}>
+        {/* Groq AI Resume-to-Profile Auto-Fill Card */}
+        <div
+          className="card p-4 mb-4"
+          style={{
+            borderRadius: '16px',
+            background: 'linear-gradient(135deg, #EEF2FF 0%, #F5F3FF 100%)',
+            border: '1px solid #C7D2FE',
+          }}
+        >
+          <div className="row align-items-center g-3">
+            <div className="col-lg-6">
+              <div className="d-flex align-items-start gap-3">
                 <div
-                  className="mx-auto rounded-circle d-flex align-items-center justify-content-center fw-bold text-white mb-3 shadow-sm"
+                  className="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
                   style={{
-                    width: '72px',
-                    height: '72px',
-                    background: 'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)',
-                    fontSize: '26px',
+                    width: '46px',
+                    height: '46px',
+                    backgroundColor: '#4F46E5',
+                    color: '#FFFFFF',
                   }}
                 >
-                  {(formData.full_name || 'C').charAt(0).toUpperCase()}
+                  <i className="bi bi-magic fs-5"></i>
                 </div>
-
-                <h5 className="fw-bold text-dark mb-1">{formData.full_name || 'Candidate User'}</h5>
-                <p className="small text-muted mb-3">{formData.headline || 'Add your professional headline'}</p>
-
-                <div
-                  className="p-3 rounded-4 d-flex align-items-center justify-content-center gap-3 mb-3"
-                  style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
-                >
-                  <div className="position-relative d-inline-flex align-items-center justify-content-center">
-                    <svg width="92" height="92" style={{ transform: 'rotate(-90deg)' }}>
-                      <circle cx="46" cy="46" r={radius} stroke="#E2E8F0" strokeWidth="7" fill="transparent" />
-                      <circle
-                        cx="46"
-                        cy="46"
-                        r={radius}
-                        stroke={computedCompletion >= 80 ? '#10B981' : '#4F46E5'}
-                        strokeWidth="7"
-                        fill="transparent"
-                        strokeDasharray={circumference}
-                        strokeDashoffset={strokeOffset}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                    <span className="position-absolute fw-bold fs-6" style={{ color: '#0F172A' }}>
-                      {computedCompletion}%
+                <div>
+                  <div className="d-flex align-items-center gap-2 mb-1">
+                    <h6 className="fw-bold text-dark mb-0">
+                      Smart Auto-Fill from Resume
+                    </h6>
+                    <span
+                      className="badge rounded-pill px-2 py-0.5 fw-semibold"
+                      style={{
+                        backgroundColor: '#4F46E5',
+                        color: '#FFFFFF',
+                        fontSize: '10.5px',
+                      }}
+                    >
+                      Groq AI Parser
                     </span>
                   </div>
-                  <div className="text-start">
-                    <div className="fw-bold small text-dark">Profile Strength</div>
-                    <div className="text-muted" style={{ fontSize: '12px' }}>
-                      {computedCompletion >= 80 ? 'Recruiter Ready' : 'Add skills & bio to reach 100%'}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="d-flex justify-content-around pt-3 border-top small">
-                  <div>
-                    <div className="fw-bold fs-5 text-dark">{formData.skills.length}</div>
-                    <div className="text-muted" style={{ fontSize: '11.5px' }}>Skills</div>
-                  </div>
-                  <div className="border-start"></div>
-                  <div>
-                    <div className="fw-bold fs-5 text-dark">{formData.experience_years} yrs</div>
-                    <div className="text-muted" style={{ fontSize: '11.5px' }}>Experience</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Skills Inventory Card */}
-              <div className="card bg-white p-4" style={cardStyle}>
-                <div className="d-flex justify-content-between align-items-center mb-2">
-                  <h6 className="fw-bold text-dark mb-0">
-                    <i className="bi bi-code-slash me-2" style={{ color: '#4F46E5' }}></i>
-                    Skills Inventory
-                  </h6>
-                  <span
-                    className="badge rounded-pill"
-                    style={{ backgroundColor: '#EEF2FF', color: '#4F46E5' }}
-                  >
-                    {formData.skills.length}
-                  </span>
-                </div>
-                <p className="text-muted small mb-3">
-                  Used alongside your resume for weighted job compatibility scoring.
-                </p>
-
-                <div className="input-group mb-3">
-                  <input
-                    type="text"
-                    className="form-control form-control-sm"
-                    placeholder="e.g. Python, React, Docker..."
-                    value={skillInput}
-                    onChange={(e) => setSkillInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') handleAddSkill(e);
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddSkill}
-                    className="btn btn-sm text-white fw-semibold px-3"
-                    style={{ backgroundColor: '#4F46E5' }}
-                  >
-                    Add
-                  </button>
-                </div>
-
-                <div className="d-flex flex-wrap gap-2">
-                  {formData.skills.length === 0 ? (
-                    <span className="small text-muted fst-italic">No skills added yet.</span>
-                  ) : (
-                    formData.skills.map((skill, index) => (
-                      <span
-                        key={index}
-                        className="badge rounded-pill px-3 py-2 fw-medium d-inline-flex align-items-center gap-2"
-                        style={{
-                          backgroundColor: '#EEF2FF',
-                          color: '#4F46E5',
-                          border: '1px solid #C7D2FE',
-                          fontSize: '12px',
-                        }}
-                      >
-                        {skill}
-                        <i
-                          className="bi bi-x-circle-fill"
-                          style={{ cursor: 'pointer', opacity: 0.75 }}
-                          onClick={() => handleRemoveSkill(skill)}
-                        ></i>
-                      </span>
-                    ))
-                  )}
+                  <p className="text-muted small mb-0">
+                    Upload a PDF/DOCX resume or pick an existing one to automatically extract your skills, summary, education, and work experience.
+                  </p>
                 </div>
               </div>
             </div>
 
-            {/* Right Form Column (8 cols) */}
-            <div className="col-lg-8">
-              {/* Basic & Career Track Information */}
+            <div className="col-lg-6">
+              <div className="d-flex flex-column flex-sm-row gap-2 justify-content-lg-end">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.docx"
+                  className="d-none"
+                  onChange={handleDirectResumeUpload}
+                />
+                <button
+                  type="button"
+                  disabled={parsingResume}
+                  onClick={() => fileInputRef.current?.click()}
+                  className="btn btn-sm text-white fw-semibold px-3 py-2 d-inline-flex align-items-center justify-content-center gap-2 shadow-sm"
+                  style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+                >
+                  {parsingResume ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm"></span>
+                      Parsing with Groq AI...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-cloud-arrow-up"></i> Upload & Auto-Fill
+                    </>
+                  )}
+                </button>
+
+                {resumes.length > 0 && (
+                  <div className="input-group input-group-sm" style={{ maxWidth: '280px' }}>
+                    <select
+                      className="form-select bg-white"
+                      style={{ borderRadius: '10px 0 0 10px', borderColor: '#CBD5E1' }}
+                      value={selectedResumeId}
+                      onChange={(e) => setSelectedResumeId(e.target.value)}
+                      disabled={parsingResume}
+                    >
+                      {resumes.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.file_name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={parsingResume}
+                      onClick={handleAutofillFromExisting}
+                      className="btn bg-white fw-semibold"
+                      style={{
+                        borderRadius: '0 10px 10px 0',
+                        borderColor: '#CBD5E1',
+                        color: '#4F46E5',
+                      }}
+                    >
+                      Auto-Fill
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main Profile Form */}
+        <form onSubmit={handleSaveProfile}>
+          <div className="row g-4">
+            {/* Left Column */}
+            <div className="col-lg-7">
               <div className="card bg-white p-4 mb-4" style={cardStyle}>
-                <h6 className="fw-bold text-dark mb-3">
+                <h5 className="fw-bold text-dark mb-3">
                   <i className="bi bi-person-lines-fill me-2" style={{ color: '#4F46E5' }}></i>
-                  Personal &amp; Career Preferences
-                </h6>
+                  Personal & Career Headline
+                </h5>
 
                 <div className="row g-3">
                   <div className="col-md-6">
                     <label className="form-label small fw-semibold text-dark">Full Name</label>
                     <input
                       type="text"
-                      name="full_name"
                       className="form-control"
-                      value={formData.full_name}
-                      onChange={handleChange}
+                      value={profile.full_name}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, full_name: e.target.value }))
+                      }
                       placeholder="John Doe"
                     />
                   </div>
+
                   <div className="col-md-6">
                     <label className="form-label small fw-semibold text-dark">Email Address</label>
                     <input
                       type="email"
-                      name="email"
                       className="form-control bg-light"
-                      value={formData.email}
+                      value={profile.email}
                       disabled
                     />
                   </div>
-                  <div className="col-md-6">
-                    <label className="form-label small fw-semibold text-dark">Professional Headline</label>
+
+                  <div className="col-12">
+                    <label className="form-label small fw-semibold text-dark">
+                      Professional Headline
+                    </label>
                     <input
                       type="text"
-                      name="headline"
                       className="form-control"
-                      value={formData.headline}
-                      onChange={handleChange}
-                      placeholder="Full-Stack Python & React Developer"
+                      value={profile.headline}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, headline: e.target.value }))
+                      }
+                      placeholder="Full-Stack Software Engineer | Python, Django & React"
                     />
                   </div>
-                  <div className="col-md-6">
+
+                  <div className="col-md-7">
                     <label className="form-label small fw-semibold text-dark">Target Job Role</label>
                     <input
                       type="text"
-                      name="target_role"
                       className="form-control"
-                      value={formData.target_role}
-                      onChange={handleChange}
+                      value={profile.target_role}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, target_role: e.target.value }))
+                      }
                       placeholder="Software Engineer"
                     />
                   </div>
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold text-dark">Years of Experience</label>
+
+                  <div className="col-md-5">
+                    <label className="form-label small fw-semibold text-dark">
+                      Years of Experience
+                    </label>
                     <input
                       type="number"
+                      step="0.5"
                       min="0"
-                      max="40"
-                      name="experience_years"
+                      max="50"
                       className="form-control"
-                      value={formData.experience_years}
-                      onChange={handleChange}
+                      value={profile.experience_years}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, experience_years: e.target.value }))
+                      }
                     />
                   </div>
-                  <div className="col-md-4">
+
+                  <div className="col-md-6">
                     <label className="form-label small fw-semibold text-dark">Phone Number</label>
                     <input
                       type="text"
-                      name="phone"
                       className="form-control"
-                      value={formData.phone}
-                      onChange={handleChange}
+                      value={profile.phone}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, phone: e.target.value }))
+                      }
                       placeholder="+91 98765 43210"
                     />
                   </div>
-                  <div className="col-md-4">
-                    <label className="form-label small fw-semibold text-dark">Current Location</label>
+
+                  <div className="col-md-6">
+                    <label className="form-label small fw-semibold text-dark">Location</label>
                     <input
                       type="text"
-                      name="location"
                       className="form-control"
-                      value={formData.location}
-                      onChange={handleChange}
-                      placeholder="Bengaluru / Remote"
+                      value={profile.location}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, location: e.target.value }))
+                      }
+                      placeholder="Bengaluru, India"
                     />
                   </div>
-                  <div className="col-md-6">
+
+                  <div className="col-md-4">
                     <label className="form-label small fw-semibold text-dark">LinkedIn URL</label>
                     <input
-                      type="url"
-                      name="linkedin_url"
+                      type="text"
                       className="form-control"
-                      value={formData.linkedin_url}
-                      onChange={handleChange}
-                      placeholder="https://linkedin.com/in/username"
+                      value={profile.linkedin_url}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, linkedin_url: e.target.value }))
+                      }
+                      placeholder="linkedin.com/in/username"
                     />
                   </div>
-                  <div className="col-md-6">
-                    <label className="form-label small fw-semibold text-dark">Portfolio / GitHub URL</label>
+
+                  <div className="col-md-4">
+                    <label className="form-label small fw-semibold text-dark">GitHub URL</label>
                     <input
-                      type="url"
-                      name="portfolio_url"
+                      type="text"
                       className="form-control"
-                      value={formData.portfolio_url}
-                      onChange={handleChange}
-                      placeholder="https://github.com/username"
+                      value={profile.github_url}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, github_url: e.target.value }))
+                      }
+                      placeholder="github.com/username"
                     />
                   </div>
-                  <div className="col-12">
-                    <label className="form-label small fw-semibold text-dark">Professional Summary / Bio</label>
-                    <textarea
-                      name="bio"
-                      rows="3"
+
+                  <div className="col-md-4">
+                    <label className="form-label small fw-semibold text-dark">Portfolio URL</label>
+                    <input
+                      type="text"
                       className="form-control"
-                      value={formData.bio}
-                      onChange={handleChange}
-                      placeholder="Summarize your core engineering strengths, projects, and career objectives..."
+                      value={profile.portfolio_url}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, portfolio_url: e.target.value }))
+                      }
+                      placeholder="yourportfolio.dev"
+                    />
+                  </div>
+
+                  <div className="col-12">
+                    <label className="form-label small fw-semibold text-dark">
+                      Professional Summary / Bio
+                    </label>
+                    <textarea
+                      rows="4"
+                      className="form-control"
+                      value={profile.summary}
+                      onChange={(e) =>
+                        setProfile((prev) => ({ ...prev, summary: e.target.value }))
+                      }
+                      placeholder="Summarize your technical background, key projects, and career goals..."
                     ></textarea>
                   </div>
                 </div>
               </div>
 
               {/* Work Experience Section */}
-              <div className="card bg-white p-4 mb-4" style={cardStyle}>
+              <div className="card bg-white p-4" style={cardStyle}>
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h6 className="fw-bold text-dark mb-0">
+                  <h5 className="fw-bold text-dark mb-0">
                     <i className="bi bi-briefcase-fill me-2" style={{ color: '#4F46E5' }}></i>
                     Work Experience
-                  </h6>
+                  </h5>
                   <button
                     type="button"
                     onClick={addExperience}
                     className="btn btn-sm fw-semibold"
                     style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
                   >
-                    <i className="bi bi-plus-lg me-1"></i> Add Role
+                    + Add Role
                   </button>
                 </div>
 
-                {formData.experience.length === 0 ? (
-                  <div
-                    className="text-center py-4 rounded-4 small text-muted"
-                    style={{ backgroundColor: '#F8FAFC', border: '1px dashed #CBD5E1' }}
-                  >
-                    No experience entries added yet. Click <strong>Add Role</strong> to include internships or jobs.
-                  </div>
+                {profile.experience.length === 0 ? (
+                  <p className="text-muted small mb-0">
+                    No experience entries added yet. Upload a resume above or click &ldquo;+ Add Role&rdquo;.
+                  </p>
                 ) : (
                   <div className="d-flex flex-column gap-3">
-                    {formData.experience.map((exp, idx) => (
+                    {profile.experience.map((exp, idx) => (
                       <div
                         key={idx}
-                        className="p-3 rounded-4"
+                        className="p-3 rounded-3"
                         style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
                       >
                         <div className="d-flex justify-content-between align-items-center mb-2">
                           <span className="small fw-bold text-dark">Role #{idx + 1}</span>
                           <button
                             type="button"
-                            className="btn btn-link text-danger p-0 small"
                             onClick={() => removeExperience(idx)}
+                            className="btn btn-sm text-danger p-0"
                           >
-                            <i className="bi bi-trash3"></i>
+                            <i className="bi bi-trash"></i>
                           </button>
                         </div>
                         <div className="row g-2">
-                          <div className="col-md-4">
+                          <div className="col-md-6">
                             <input
                               type="text"
                               className="form-control form-control-sm"
@@ -588,31 +756,42 @@ const Profile = () => {
                               onChange={(e) => updateExperience(idx, 'role', e.target.value)}
                             />
                           </div>
-                          <div className="col-md-4">
+                          <div className="col-md-6">
                             <input
                               type="text"
                               className="form-control form-control-sm"
-                              placeholder="Company"
+                              placeholder="Company Name"
                               value={exp.company || ''}
                               onChange={(e) => updateExperience(idx, 'company', e.target.value)}
                             />
                           </div>
-                          <div className="col-md-4">
+                          <div className="col-md-6">
                             <input
                               type="text"
                               className="form-control form-control-sm"
-                              placeholder="Duration (e.g. 2024 - Present)"
+                              placeholder="Duration (e.g. Jan 2024 - Present)"
                               value={exp.duration || ''}
                               onChange={(e) => updateExperience(idx, 'duration', e.target.value)}
+                            />
+                          </div>
+                          <div className="col-md-6">
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="Location"
+                              value={exp.location || ''}
+                              onChange={(e) => updateExperience(idx, 'location', e.target.value)}
                             />
                           </div>
                           <div className="col-12">
                             <textarea
                               rows="2"
                               className="form-control form-control-sm"
-                              placeholder="Key responsibilities and measurable impact..."
+                              placeholder="Key responsibilities and impact..."
                               value={exp.description || ''}
-                              onChange={(e) => updateExperience(idx, 'description', e.target.value)}
+                              onChange={(e) =>
+                                updateExperience(idx, 'description', e.target.value)
+                              }
                             ></textarea>
                           </div>
                         </div>
@@ -621,75 +800,143 @@ const Profile = () => {
                   </div>
                 )}
               </div>
+            </div>
 
-              {/* Education Section */}
-              <div className="card bg-white p-4" style={cardStyle}>
+            {/* Right Column */}
+            <div className="col-lg-5">
+              {/* Skills Card */}
+              <div className="card bg-white p-4 mb-4" style={cardStyle}>
+                <h5 className="fw-bold text-dark mb-1">
+                  <i className="bi bi-cpu-fill me-2" style={{ color: '#4F46E5' }}></i>
+                  Skills & Technologies
+                </h5>
+                <p className="text-muted small mb-3">
+                  Used for weighted job compatibility matching and skill gap diagnostics.
+                </p>
+
+                <div className="input-group mb-3">
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Add skill (e.g. Python, React, Docker)"
+                    value={newSkill}
+                    onChange={(e) => setNewSkill(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleAddSkill(e);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddSkill}
+                    className="btn text-white fw-semibold"
+                    style={{ backgroundColor: '#4F46E5' }}
+                  >
+                    Add
+                  </button>
+                </div>
+
+                <div className="d-flex flex-wrap gap-2">
+                  {profile.skills.length === 0 ? (
+                    <span className="text-muted small">No skills added yet.</span>
+                  ) : (
+                    profile.skills.map((skill, idx) => (
+                      <span
+                        key={idx}
+                        className="badge rounded-pill px-3 py-2 fw-medium d-inline-flex align-items-center gap-2"
+                        style={{
+                          backgroundColor: '#EEF2FF',
+                          color: '#4F46E5',
+                          fontSize: '12px',
+                        }}
+                      >
+                        {skill}
+                        <i
+                          className="bi bi-x-circle-fill"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => handleRemoveSkill(skill)}
+                        ></i>
+                      </span>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Education Card */}
+              <div className="card bg-white p-4 mb-4" style={cardStyle}>
                 <div className="d-flex justify-content-between align-items-center mb-3">
-                  <h6 className="fw-bold text-dark mb-0">
+                  <h5 className="fw-bold text-dark mb-0">
                     <i className="bi bi-mortarboard-fill me-2" style={{ color: '#4F46E5' }}></i>
                     Education
-                  </h6>
+                  </h5>
                   <button
                     type="button"
                     onClick={addEducation}
                     className="btn btn-sm fw-semibold"
                     style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
                   >
-                    <i className="bi bi-plus-lg me-1"></i> Add Education
+                    + Add Education
                   </button>
                 </div>
 
-                {formData.education.length === 0 ? (
-                  <div
-                    className="text-center py-4 rounded-4 small text-muted"
-                    style={{ backgroundColor: '#F8FAFC', border: '1px dashed #CBD5E1' }}
-                  >
-                    No education credentials added yet. Click <strong>Add Education</strong> to add your degree.
-                  </div>
+                {profile.education.length === 0 ? (
+                  <p className="text-muted small mb-0">
+                    No education entries added yet. Upload a resume or click &ldquo;+ Add Education&rdquo;.
+                  </p>
                 ) : (
                   <div className="d-flex flex-column gap-3">
-                    {formData.education.map((edu, idx) => (
+                    {profile.education.map((edu, idx) => (
                       <div
                         key={idx}
-                        className="p-3 rounded-4"
+                        className="p-3 rounded-3"
                         style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
                       >
                         <div className="d-flex justify-content-between align-items-center mb-2">
-                          <span className="small fw-bold text-dark">Credential #{idx + 1}</span>
+                          <span className="small fw-bold text-dark">Degree #{idx + 1}</span>
                           <button
                             type="button"
-                            className="btn btn-link text-danger p-0 small"
                             onClick={() => removeEducation(idx)}
+                            className="btn btn-sm text-danger p-0"
                           >
-                            <i className="bi bi-trash3"></i>
+                            <i className="bi bi-trash"></i>
                           </button>
                         </div>
                         <div className="row g-2">
-                          <div className="col-md-5">
+                          <div className="col-12">
                             <input
                               type="text"
                               className="form-control form-control-sm"
-                              placeholder="Degree (e.g. B.Tech Computer Science)"
+                              placeholder="Degree (e.g. B.Tech in Computer Science)"
                               value={edu.degree || ''}
                               onChange={(e) => updateEducation(idx, 'degree', e.target.value)}
                             />
                           </div>
-                          <div className="col-md-5">
+                          <div className="col-12">
                             <input
                               type="text"
                               className="form-control form-control-sm"
-                              placeholder="University / College"
+                              placeholder="Institution / University"
                               value={edu.institution || ''}
-                              onChange={(e) => updateEducation(idx, 'institution', e.target.value)}
+                              onChange={(e) =>
+                                updateEducation(idx, 'institution', e.target.value)
+                              }
                             />
                           </div>
-                          <div className="col-md-2">
+                          <div className="col-6">
                             <input
                               type="text"
                               className="form-control form-control-sm"
-                              placeholder="Year"
+                              placeholder="Graduation Year"
                               value={edu.year || ''}
                               onChange={(e) => updateEducation(idx, 'year', e.target.value)}
+                            />
+                          </div>
+                          <div className="col-6">
+                            <input
+                              type="text"
+                              className="form-control form-control-sm"
+                              placeholder="CGPA / Grade"
+                              value={edu.grade || ''}
+                              onChange={(e) => updateEducation(idx, 'grade', e.target.value)}
                             />
                           </div>
                         </div>
@@ -698,6 +945,25 @@ const Profile = () => {
                   </div>
                 )}
               </div>
+
+              {/* Save Profile Action Button */}
+              <button
+                type="submit"
+                disabled={saving}
+                className="btn w-100 py-3 fw-semibold text-white shadow-sm d-flex align-items-center justify-content-center gap-2"
+                style={{ backgroundColor: '#4F46E5', borderRadius: '12px' }}
+              >
+                {saving ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm"></span>
+                    Saving Profile...
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-check2-circle fs-5"></i> Save Candidate Profile
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </form>

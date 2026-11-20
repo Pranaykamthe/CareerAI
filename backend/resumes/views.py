@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
+from accounts.models import Profile
+from accounts.serializers import ProfileSerializer
 from ai_services.factory import get_ai_service
 from .models import Resume, ResumeAnalysis, ResumeDraft
 from .serializers import (
@@ -29,7 +31,7 @@ SAMPLE_RESUME_DEFAULT = {
         "email": "john.doe@email.com",
         "phone": "+1 (555) 123-4567",
         "location": "San Francisco, CA",
-        "linkedin": "linkedin.com/in/johndoe",
+        "linkedin": "[linkedin.com/in/johndoe](https://linkedin.com/in/johndoe)",
         "portfolio": "johndoe.dev"
     },
     "summary": "Results-driven Software Engineer with experience building scalable web applications and cloud-based solutions. Skilled in JavaScript, Python, React, and Django. Passionate about creating efficient, user-centric products and collaborating with cross-functional teams.",
@@ -64,7 +66,7 @@ SAMPLE_RESUME_DEFAULT = {
     "projects": [
         {
             "title": "CareerAI Platform",
-            "link": "github.com/username/careerai",
+            "link": "[github.com/username/careerai](https://github.com/username/careerai)",
             "bullets": [
                 "Built full-stack AI resume analyzer and mock interview simulator using React and Django.",
                 "Integrated Groq LLM API for automated answer evaluation and ATS scoring."
@@ -96,7 +98,6 @@ class ResumeListCreateView(generics.ListCreateAPIView):
             file_size=uploaded_file.size,
             file_type=ext
         )
-        # Automatically parse and run initial analysis on upload
         try:
             parsed_result = extract_resume_data(resume_instance.file.path, resume_instance.file_type)
             resume_instance.raw_text = parsed_result.get('raw_text', '')
@@ -137,7 +138,6 @@ class ResumeParseView(APIView):
             resume.is_parsed = True
             resume.save()
 
-            # Refresh analysis
             analysis_result = analyze_resume_text(resume.raw_text, parsed_result)
             analysis_obj, _ = ResumeAnalysis.objects.update_or_create(
                 resume=resume,
@@ -154,10 +154,6 @@ class ResumeParseView(APIView):
 
 
 class ResumeAnalyzeView(APIView):
-    """
-    GET: Returns current analysis report for resume.
-    POST: Triggers a fresh ATS scoring and feedback calculation.
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, pk):
@@ -229,8 +225,153 @@ class DownloadResumeView(APIView):
             return Response({"error": "Resume not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
+# ==========================================================
+# Groq AI Resume-to-Profile Auto-Fill Endpoint
+# ==========================================================
+
+class ResumeAutofillProfileView(APIView):
+    """
+    Accepts either:
+      - multipart/form-data with 'file' (.pdf or .docx) -> saves Resume, parses via Groq AI, and auto-fills Profile
+      - JSON with 'resume_id' -> parses existing Resume via Groq AI and auto-fills Profile
+    Optional flag: 'save_to_profile' (default True).
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        uploaded_file = request.FILES.get('file')
+        resume_id = request.data.get('resume_id')
+        save_flag = str(request.data.get('save_to_profile', 'true')).lower() != 'false'
+
+        resume = None
+        if uploaded_file:
+            ext = os.path.splitext(uploaded_file.name)[1].lower()
+            if ext not in ['.pdf', '.docx']:
+                return Response(
+                    {"error": "Unsupported file format. Please upload a PDF or DOCX resume."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if uploaded_file.size > 10 * 1024 * 1024:
+                return Response(
+                    {"error": "File size exceeds the 10MB limit."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            resume = Resume.objects.create(
+                user=request.user,
+                file=uploaded_file,
+                file_name=uploaded_file.name,
+                file_size=uploaded_file.size,
+                file_type=ext.replace('.', '')
+            )
+            parsed_result = extract_resume_data(resume.file.path, resume.file_type)
+            resume.raw_text = parsed_result.get('raw_text', '')
+            resume.parsed_data = parsed_result
+            resume.is_parsed = True
+            resume.save()
+
+            try:
+                analysis_result = analyze_resume_text(resume.raw_text, parsed_result)
+                ResumeAnalysis.objects.update_or_create(resume=resume, defaults=analysis_result)
+            except Exception:
+                pass
+        elif resume_id:
+            resume = Resume.objects.filter(pk=resume_id, user=request.user).first()
+            if not resume:
+                return Response({"error": "Selected resume not found."}, status=status.HTTP_404_NOT_FOUND)
+        else:
+            resume = Resume.objects.filter(user=request.user, is_primary=True).first() or Resume.objects.filter(user=request.user).first()
+            if not resume:
+                return Response(
+                    {"error": "Please upload a PDF/DOCX resume or select an existing resume."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+        if not resume.raw_text:
+            parsed_result = extract_resume_data(resume.file.path, resume.file_type)
+            resume.raw_text = parsed_result.get('raw_text', '')
+            resume.parsed_data = parsed_result
+            resume.is_parsed = True
+            resume.save()
+
+        ai = get_ai_service()
+        extracted = ai.extract_profile_from_resume(resume.raw_text, resume.parsed_data)
+
+        profile, _ = Profile.objects.get_or_create(user=request.user)
+
+        if save_flag:
+            # Update User first/last name if extracted and currently blank
+            full_name = (extracted.get('full_name') or '').strip()
+            if full_name and not request.user.first_name:
+                parts = full_name.split(' ', 1)
+                request.user.first_name = parts[0][:150]
+                if len(parts) > 1:
+                    request.user.last_name = parts[1][:150]
+                request.user.save(update_fields=['first_name', 'last_name'])
+
+            # Map extracted fields onto Profile safely regardless of field naming variant
+            field_mappings = {
+                'headline': extracted.get('headline'),
+                'target_role': extracted.get('target_role'),
+                'experience_years': extracted.get('experience_years'),
+                'phone': extracted.get('phone'),
+                'location': extracted.get('location'),
+                'linkedin_url': extracted.get('linkedin_url'),
+                'linkedin': extracted.get('linkedin_url'),
+                'github_url': extracted.get('github_url'),
+                'github': extracted.get('github_url'),
+                'portfolio_url': extracted.get('portfolio_url'),
+                'portfolio': extracted.get('portfolio_url'),
+                'bio': extracted.get('summary'),
+                'summary': extracted.get('summary'),
+            }
+
+            for attr, val in field_mappings.items():
+                if hasattr(profile, attr) and val not in (None, ''):
+                    setattr(profile, attr, val)
+
+            # Handle JSON list fields (skills / skills_list, education, experience / work_experience)
+            extracted_skills = extracted.get('skills') or []
+            if extracted_skills:
+                if hasattr(profile, 'skills_list'):
+                    existing = profile.skills_list if isinstance(profile.skills_list, list) else []
+                    merged = list(dict.fromkeys(existing + extracted_skills))
+                    profile.skills_list = merged
+                elif hasattr(profile, 'skills'):
+                    existing = profile.skills if isinstance(profile.skills, list) else []
+                    merged = list(dict.fromkeys(existing + extracted_skills))
+                    profile.skills = merged
+
+            extracted_edu = extracted.get('education') or []
+            if extracted_edu and hasattr(profile, 'education'):
+                profile.education = extracted_edu
+
+            extracted_exp = extracted.get('experience') or []
+            if extracted_exp:
+                if hasattr(profile, 'work_experience'):
+                    profile.work_experience = extracted_exp
+                elif hasattr(profile, 'experience'):
+                    profile.experience = extracted_exp
+
+            profile.save()
+
+        try:
+            serialized_profile = ProfileSerializer(profile).data
+        except Exception:
+            serialized_profile = extracted
+
+        return Response({
+            "message": f"Profile auto-filled from {resume.file_name} using {extracted.get('provider', 'Groq AI')}.",
+            "provider": extracted.get('provider', 'Groq AI'),
+            "resume_id": resume.id,
+            "resume_name": resume.file_name,
+            "extracted_profile": extracted,
+            "profile": serialized_profile,
+        }, status=status.HTTP_200_OK)
+
+
 # ==========================================
-# Phase 19: AI Resume Builder & Groq Improver Views
+# AI Resume Builder & Groq Improver Views
 # ==========================================
 
 class ResumeDraftListCreateView(APIView):
@@ -242,7 +383,6 @@ class ResumeDraftListCreateView(APIView):
 
     def post(self, request):
         data = request.data.copy()
-        # Initialize with sample template if empty
         if not data.get('personal_info'):
             for k, v in SAMPLE_RESUME_DEFAULT.items():
                 if isinstance(v, (dict, list)):
@@ -290,7 +430,6 @@ class ResumeDraftDetailView(APIView):
 
 
 class ResumeAIImproveSectionView(APIView):
-    """Uses Groq API to rewrite a specific section or bullet point."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -305,10 +444,7 @@ class ResumeAIImproveSectionView(APIView):
 
         ai = get_ai_service()
         if not hasattr(ai, 'improve_resume_section'):
-            return Response(
-                {"error": "Groq API key not configured in backend/.env"},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE
-            )
+            return Response({"error": "Groq API key not configured in backend/.env"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
 
         result = ai.improve_resume_section(section, action, content, target_role, ats_issues)
         if 'score_increase' not in result and 'estimated_score_boost' in result:
@@ -317,7 +453,6 @@ class ResumeAIImproveSectionView(APIView):
 
 
 class ResumeAutoFixATSView(APIView):
-    """Fetches ATS Analyzer weaknesses/recommendations and uses Groq API to auto-improve the resume."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -328,7 +463,6 @@ class ResumeAutoFixATSView(APIView):
         weaknesses = request.data.get('weaknesses', [])
         recommendations = request.data.get('recommendations', [])
 
-        # Pull directly from ATS Analyzer if resume_id is provided
         if resume_id:
             resume = Resume.objects.filter(pk=resume_id, user=request.user).first()
             if resume and hasattr(resume, 'analysis'):
@@ -353,7 +487,6 @@ class ResumeAutoFixATSView(APIView):
 
 
 class ResumeExportDocxView(APIView):
-    """Generates a clean ATS-friendly DOCX matching the sample resume format."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -361,7 +494,6 @@ class ResumeExportDocxView(APIView):
         p = data.get('personal_info', {})
         doc = Document()
 
-        # Header
         name_p = doc.add_paragraph()
         name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run_name = name_p.add_run(p.get('full_name', 'CANDIDATE NAME').upper())

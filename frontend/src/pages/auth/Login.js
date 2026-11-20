@@ -42,7 +42,7 @@ const Login = () => {
       style={{ backgroundColor: '#F8FAFC' }}
     >
       <div className="row g-0 flex-grow-1">
-        {/* Left Side: Dark Hero Brand Panel (Matches Admin Portal) */}
+        {/* Left Side: Dark Hero Brand Panel */}
         <div
           className="col-lg-5 d-none d-lg-flex flex-column justify-content-between p-5 text-white"
           style={{
@@ -52,7 +52,10 @@ const Login = () => {
         >
           {/* Brand Logo */}
           <div>
-            <Link to="/" className="text-decoration-none fs-3 fw-bold text-white d-inline-flex align-items-center">
+            <Link
+              to="/"
+              className="text-decoration-none fs-3 fw-bold text-white d-inline-flex align-items-center"
+            >
               <i className="bi bi-layers-fill me-2" style={{ color: '#6366F1' }}></i>
               CareerAI
             </Link>
@@ -65,7 +68,12 @@ const Login = () => {
             </h1>
             <div
               className="mb-4"
-              style={{ width: '48px', height: '3px', backgroundColor: '#4F46E5', borderRadius: '2px' }}
+              style={{
+                width: '48px',
+                height: '3px',
+                backgroundColor: '#4F46E5',
+                borderRadius: '2px',
+              }}
             ></div>
             <h5 className="fw-semibold text-white mb-2">AI-Powered Career Intelligence</h5>
             <p className="text-secondary lead fs-6 mb-5" style={{ maxWidth: '420px' }}>
@@ -94,6 +102,27 @@ const Login = () => {
 
         {/* Right Side: Centered Candidate Login Card */}
         <div className="col-lg-7 d-flex flex-column align-items-center justify-content-center p-4">
+          {/* Top Navigation Bar: Back to Homepage */}
+          <div
+            className="d-flex justify-content-between align-items-center mb-3"
+            style={{ maxWidth: '450px', width: '100%' }}
+          >
+            <Link
+              to="/"
+              className="btn btn-sm btn-light border text-dark d-inline-flex align-items-center gap-2 px-3 py-2 fw-medium shadow-sm"
+              style={{ borderRadius: '10px', borderColor: '#E2E8F0', backgroundColor: '#FFFFFF' }}
+            >
+              <i className="bi bi-arrow-left" style={{ color: '#4F46E5' }}></i> Back to Homepage
+            </Link>
+            <Link
+              to="/"
+              className="d-lg-none text-decoration-none fw-bold text-dark d-inline-flex align-items-center"
+            >
+              <i className="bi bi-layers-fill me-1" style={{ color: '#4F46E5' }}></i>
+              CareerAI
+            </Link>
+          </div>
+
           <div
             className="card bg-white p-4 p-md-5 shadow-sm"
             style={{

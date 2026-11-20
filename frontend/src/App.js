@@ -27,8 +27,9 @@ import MockInterview from './pages/candidate/MockInterview';
 import InterviewReport from './pages/candidate/InterviewReport';
 import InterviewHistory from './pages/candidate/InterviewHistory';
 
-// Admin Portal Page
+// Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
+import AdminProfile from './pages/admin/AdminProfile';
 
 // Candidate Layout: Renders persistent Navbar, active route in Outlet, and pinned Footer
 const CandidateLayout = () => {
@@ -79,14 +80,23 @@ function App() {
             <Route path="/interview-report/:sessionId" element={<InterviewReport />} />
             <Route path="/interview-history" element={<InterviewHistory />} />
             <Route path="/interviews/history" element={<InterviewHistory />} />
+            <Route path="/history" element={<InterviewHistory />} />
           </Route>
 
-          {/* Standalone Protected Admin Portal (No Candidate Navbar or Footer) */}
+          {/* Standalone Protected Admin Portal Routes */}
           <Route
             path="/admin"
             element={
               <ProtectedRoute allowedRoles={['admin']}>
                 <AdminDashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/admin/profile"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <AdminProfile />
               </ProtectedRoute>
             }
           />

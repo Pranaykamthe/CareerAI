@@ -6,6 +6,7 @@ from .views import (
     ResumeAnalyzeView,
     SetPrimaryResumeView,
     DownloadResumeView,
+    ResumeAutofillProfileView,
     ResumeDraftListCreateView,
     ResumeDraftDetailView,
     ResumeAIImproveSectionView,
@@ -21,7 +22,10 @@ urlpatterns = [
     path('<int:pk>/set-primary/', SetPrimaryResumeView.as_view(), name='resume-set-primary'),
     path('<int:pk>/download/', DownloadResumeView.as_view(), name='resume-download'),
 
-    # Phase 19: AI Resume Builder & Groq ATS Improvement Endpoints
+    # Groq AI Resume-to-Profile Auto-Fill
+    path('autofill-profile/', ResumeAutofillProfileView.as_view(), name='resume-autofill-profile'),
+
+    # AI Resume Builder & Groq ATS Improvement Endpoints
     path('builder/', ResumeDraftListCreateView.as_view(), name='resume-builder-list'),
     path('builder/<int:pk>/', ResumeDraftDetailView.as_view(), name='resume-builder-detail'),
     path('builder/ai-improve/', ResumeAIImproveSectionView.as_view(), name='resume-ai-improve'),
