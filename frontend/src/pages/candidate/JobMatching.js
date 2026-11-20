@@ -1,400 +1,572 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { jobService } from '../../services/jobService';
+import { Link, useSearchParams } from 'react-router-dom';
+import api from '../../services/api';
 import { resumeService } from '../../services/resumeService';
+import { applicationService } from '../../services/applicationService';
 
 const JobMatching = () => {
-  const [matches, setMatches] = useState([]);
+  const [searchParams] = useSearchParams();
+  const focusedJobId = searchParams.get('jobId');
+
   const [resumes, setResumes] = useState([]);
   const [selectedResumeId, setSelectedResumeId] = useState('');
-  const [activeResumeInfo, setActiveResumeInfo] = useState(null);
+  const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [filterLevel, setFilterLevel] = useState('ALL');
+  const [matching, setMatching] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  // Filter & Modal States
+  const [minScoreFilter, setMinScoreFilter] = useState(0);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedMatch, setSelectedMatch] = useState(null);
+  const [selectedMatchModal, setSelectedMatchModal] = useState(null);
+  const [savingJobId, setSavingJobId] = useState(null);
 
-  useEffect(() => {
-    fetchResumesAndMatches();
-  }, []);
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  };
 
-  const fetchResumesAndMatches = async (resumeId = null) => {
-    setLoading(true);
-    setError('');
+  const computeMatchesForResume = async (resumeId) => {
+    if (!resumeId) return;
+    setMatching(true);
     try {
-      const resumeList = await resumeService.getResumes();
-      setResumes(resumeList);
+      let res;
+      try {
+        res = await api.post('/jobs/match/', { resume_id: Number(resumeId) });
+      } catch (err) {
+        if (err.response?.status === 405 || err.response?.status === 404) {
+          res = await api.get('/jobs/matches/', { params: { resume_id: resumeId } });
+        } else {
+          throw err;
+        }
+      }
 
-      const matchRes = await jobService.getMatches(resumeId);
-      setMatches(matchRes.matches || []);
-      setActiveResumeInfo(matchRes.resume);
+      const list = Array.isArray(res.data)
+        ? res.data
+        : res.data?.matches || res.data?.results || [];
 
-      if (matchRes.resume && !selectedResumeId) {
-        setSelectedResumeId(matchRes.resume.id);
+      // Sort highest match score first
+      const sorted = [...list].sort(
+        (a, b) => Number(b.match_score ?? 0) - Number(a.match_score ?? 0)
+      );
+      setMatches(sorted);
+
+      if (focusedJobId) {
+        const target = sorted.find(
+          (m) => String(m.job?.id || m.job_id) === String(focusedJobId)
+        );
+        if (target) setSelectedMatchModal(target);
       }
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load job compatibility matches.');
+      showToast('danger', err.response?.data?.detail || 'Unable to compute job compatibility scores.');
     } finally {
-      setLoading(false);
+      setMatching(false);
     }
   };
 
-  const handleResumeChange = (e) => {
-    const id = e.target.value;
-    setSelectedResumeId(id);
-    fetchResumesAndMatches(id);
+  useEffect(() => {
+    const init = async () => {
+      setLoading(true);
+      try {
+        const data = await resumeService.getResumes();
+        const list = Array.isArray(data) ? data : data?.results || [];
+        setResumes(list);
+
+        if (list.length > 0) {
+          const primary = list.find((r) => r.is_primary || r.is_default);
+          const initialId = String(primary?.id || list[0].id);
+          setSelectedResumeId(initialId);
+          await computeMatchesForResume(initialId);
+        }
+      } catch (err) {
+        showToast('danger', 'Failed to load resumes for matching.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    init();
+  }, []);
+
+  const handleResumeChange = async (e) => {
+    const nextId = e.target.value;
+    setSelectedResumeId(nextId);
+    await computeMatchesForResume(nextId);
   };
 
-  const getScoreBadgeClass = (score) => {
-    if (score >= 80) return 'bg-success text-white';
-    if (score >= 60) return 'bg-warning text-dark';
-    return 'bg-secondary text-white';
+  const handleSaveToTracker = async (jobObj) => {
+    const jId = jobObj?.id || jobObj?.job_id;
+    if (!jId) return;
+    setSavingJobId(jId);
+    try {
+      await applicationService.createOrUpdateApplication(jId, 'Saved', '');
+      showToast('success', `"${jobObj.title || jobObj.job_title}" added to Application Tracker!`);
+    } catch (err) {
+      showToast('danger', 'Failed to save job to tracker.');
+    } finally {
+      setSavingJobId(null);
+    }
   };
 
-  const filteredMatches = matches.filter((item) => {
-    const matchesFilter =
-      filterLevel === 'ALL' ||
-      (filterLevel === 'HIGH' && item.match_score >= 80) ||
-      (filterLevel === 'MODERATE' && item.match_score >= 60 && item.match_score < 80) ||
-      (filterLevel === 'LOW' && item.match_score < 60);
+  const getScoreTheme = (score) => {
+    if (score >= 80) return { color: '#10B981', bg: '#ECFDF5', label: 'Strong Fit' };
+    if (score >= 60) return { color: '#4F46E5', bg: '#EEF2FF', label: 'Good Match' };
+    return { color: '#F59E0B', bg: '#FFFBEB', label: 'Partial Fit' };
+  };
 
-    const matchesSearch =
-      !searchQuery ||
-      item.job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      item.job.location.toLowerCase().includes(searchQuery.toLowerCase());
-
-    return matchesFilter && matchesSearch;
+  const filteredMatches = matches.filter((m) => {
+    const job = m.job || m;
+    const score = Number(m.match_score ?? 0);
+    const q = searchQuery.toLowerCase();
+    const titleMatch = (job.title || job.job_title || '').toLowerCase().includes(q);
+    const companyMatch = (job.company || '').toLowerCase().includes(q);
+    return score >= minScoreFilter && (titleMatch || companyMatch);
   });
 
-  return (
-    <div className="min-vh-100 bg-light">
+  const bestScore = matches.length > 0 ? Math.max(...matches.map((m) => Number(m.match_score ?? 0))) : 0;
+  const strongFitsCount = matches.filter((m) => Number(m.match_score ?? 0) >= 75).length;
 
-      <div className="container py-4">
-        {/* Header Breadcrumb & Actions */}
-        <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  const cardStyle = {
+    borderRadius: '16px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
+  };
+
+  const ringRadius = 28;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+
+  return (
+    <div className="py-4" style={{ backgroundColor: '#F8FAFC' }}>
+      <div className="container">
+        {toast && (
+          <div
+            className={`alert alert-${toast.type} d-flex align-items-center justify-content-between rounded-4 shadow-sm mb-4`}
+          >
+            <span className="small fw-semibold">{toast.message}</span>
+            <button type="button" className="btn-close btn-sm" onClick={() => setToast(null)}></button>
+          </div>
+        )}
+
+        {/* Top Header */}
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
           <div>
-            <h3 className="fw-bold text-dark mb-1 d-flex align-items-center">
-              <i className="bi bi-bullseye text-primary me-2"></i> Job Matching & Compatibility
-            </h3>
+            <span
+              className="badge rounded-pill px-3 py-1 fw-semibold mb-1"
+              style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '11.5px' }}
+            >
+              <i className="bi bi-bullseye me-1"></i> Weighted Compatibility Engine
+            </span>
+            <h2 className="fw-bold mb-1" style={{ color: '#0F172A', letterSpacing: '-0.02em' }}>
+              Smart Job Matching &amp; Skill Gaps
+            </h2>
             <p className="text-muted small mb-0">
-              Deterministic matching calculated across technical skills (50%), experience alignment (30%), and keyword density (20%).
+              Evaluates skill overlap (50%), experience alignment (30%), and keyword density (20%) against open roles.
             </p>
           </div>
 
-          <div className="d-flex align-items-center gap-2">
-            <label className="small fw-semibold text-muted text-nowrap d-none d-sm-inline">
-              Active Resume:
-            </label>
-            <select
-              className="form-select form-select-sm shadow-sm"
-              style={{ minWidth: '220px' }}
-              value={selectedResumeId}
-              onChange={handleResumeChange}
-              disabled={loading || resumes.length === 0}
+          <div className="d-flex gap-2">
+            <Link
+              to="/jobs"
+              className="btn btn-sm bg-white fw-semibold px-3 py-2"
+              style={{ border: '1px solid #CBD5E1', color: '#334155', borderRadius: '10px' }}
             >
-              {resumes.length === 0 && <option value="">No resumes found</option>}
-              {resumes.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.file_name} {r.is_primary ? '(Primary)' : ''}
-                </option>
-              ))}
-            </select>
-
+              <i className="bi bi-plus-circle me-1 text-primary"></i> Import External JD
+            </Link>
             <button
-              className="btn btn-outline-primary btn-sm text-nowrap"
-              onClick={() => fetchResumesAndMatches(selectedResumeId)}
-              disabled={loading}
-              title="Recalculate matches"
+              type="button"
+              disabled={!selectedResumeId || matching}
+              onClick={() => computeMatchesForResume(selectedResumeId)}
+              className="btn btn-sm text-white fw-semibold px-3 py-2 shadow-sm"
+              style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
             >
-              <i className="bi bi-arrow-clockwise me-1"></i> Refresh
+              <i className="bi bi-arrow-repeat me-1"></i>
+              {matching ? 'Scoring...' : 'Refresh Matches'}
             </button>
           </div>
         </div>
 
-        {error && (
-          <div className="alert alert-danger d-flex align-items-center mb-4" role="alert">
-            <i className="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
-            <div>{error}</div>
-          </div>
-        )}
-
-        {/* No Resumes Prompt */}
-        {!loading && resumes.length === 0 && (
-          <div className="card shadow-sm border-0 p-5 text-center bg-white rounded-3">
-            <div className="d-inline-flex p-3 rounded-circle bg-primary bg-opacity-10 text-primary mx-auto mb-3">
-              <i className="bi bi-file-earmark-arrow-up fs-1"></i>
+        {/* Resume Selector + 3 Summary KPIs */}
+        <div className="row g-3 mb-4">
+          <div className="col-lg-6">
+            <div className="card bg-white p-4 h-100" style={cardStyle}>
+              <label className="small fw-bold text-dark mb-2 d-block">
+                <i className="bi bi-file-earmark-person me-2" style={{ color: '#4F46E5' }}></i>
+                Select Candidate Resume for Matching
+              </label>
+              <select
+                className="form-select"
+                value={selectedResumeId}
+                onChange={handleResumeChange}
+                disabled={loading || resumes.length === 0}
+              >
+                {resumes.length === 0 ? (
+                  <option value="">No resumes uploaded yet</option>
+                ) : (
+                  resumes.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.filename || r.file?.split('/').pop() || `Resume #${r.id}`}{' '}
+                      {r.is_primary || r.is_default ? '(Primary)' : ''}
+                    </option>
+                  ))
+                )}
+              </select>
             </div>
-            <h4 className="fw-bold text-dark">No Resume Uploaded Yet</h4>
-            <p className="text-muted small mx-auto mb-4" style={{ maxWidth: '460px' }}>
-              Upload your resume in PDF or DOCX format to analyze match compatibility against curated Indian tech roles.
+          </div>
+
+          <div className="col-4 col-lg-2">
+            <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
+              <div className="small text-muted fw-semibold mb-1">Roles Scored</div>
+              <div className="fw-bold fs-3" style={{ color: '#0F172A' }}>{matches.length}</div>
+            </div>
+          </div>
+
+          <div className="col-4 col-lg-2">
+            <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
+              <div className="small text-muted fw-semibold mb-1">Best Match</div>
+              <div className="fw-bold fs-3" style={{ color: '#10B981' }}>{bestScore}%</div>
+            </div>
+          </div>
+
+          <div className="col-4 col-lg-2">
+            <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
+              <div className="small text-muted fw-semibold mb-1">Strong Fits (75%+)</div>
+              <div className="fw-bold fs-3" style={{ color: '#4F46E5' }}>{strongFitsCount}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Filter & Search Toolbar */}
+        <div className="card bg-white p-3 mb-4" style={cardStyle}>
+          <div className="row g-3 align-items-center">
+            <div className="col-md-6">
+              <div className="input-group">
+                <span
+                  className="input-group-text border-end-0"
+                  style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
+                >
+                  <i className="bi bi-search text-muted"></i>
+                </span>
+                <input
+                  type="text"
+                  className="form-control border-start-0"
+                  style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', fontSize: '13.5px' }}
+                  placeholder="Filter matched roles by title or company..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="col-md-6 d-flex flex-wrap justify-content-md-end gap-2">
+              {[
+                { label: 'All Roles', min: 0 },
+                { label: '50%+ Fit', min: 50 },
+                { label: '75%+ Strong Fit', min: 75 },
+              ].map((pill) => (
+                <button
+                  key={pill.min}
+                  type="button"
+                  onClick={() => setMinScoreFilter(pill.min)}
+                  className="btn btn-sm fw-semibold px-3 py-1.5"
+                  style={{
+                    borderRadius: '8px',
+                    fontSize: '12px',
+                    backgroundColor: minScoreFilter === pill.min ? '#4F46E5' : '#F8FAFC',
+                    color: minScoreFilter === pill.min ? '#FFFFFF' : '#475569',
+                    border: '1px solid #E2E8F0',
+                  }}
+                >
+                  {pill.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Match Results List */}
+        {loading || matching ? (
+          <div className="card bg-white p-5 text-center" style={cardStyle}>
+            <div className="spinner-border mx-auto" style={{ color: '#4F46E5' }} role="status"></div>
+            <h6 className="fw-bold text-dark mt-3 mb-1">Computing Job Compatibility Scores...</h6>
+            <p className="text-muted small mb-0">
+              Comparing your extracted resume skills and experience against active job descriptions.
             </p>
-            <div>
-              <Link to="/resumes" className="btn btn-primary-custom px-4">
-                <i className="bi bi-cloud-arrow-up me-1"></i> Upload Resume
-              </Link>
-            </div>
           </div>
-        )}
-
-        {/* Filters and Search Bar */}
-        {resumes.length > 0 && (
-          <div className="card shadow-sm border-0 p-3 rounded-3 bg-white mb-4">
-            <div className="row g-2 align-items-center">
-              <div className="col-12 col-md-6">
-                <div className="input-group input-group-sm">
-                  <span className="input-group-text bg-light border-end-0">
-                    <i className="bi bi-search text-muted"></i>
-                  </span>
-                  <input
-                    type="text"
-                    className="form-control border-start-0"
-                    placeholder="Search by role, company, or city..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                </div>
-              </div>
-
-              <div className="col-12 col-md-6 d-flex justify-content-md-end gap-2">
-                <div className="btn-group btn-group-sm w-100 w-md-auto">
-                  <button
-                    className={`btn ${filterLevel === 'ALL' ? 'btn-primary' : 'btn-outline-secondary'}`}
-                    onClick={() => setFilterLevel('ALL')}
-                  >
-                    All ({matches.length})
-                  </button>
-                  <button
-                    className={`btn ${filterLevel === 'HIGH' ? 'btn-success' : 'btn-outline-secondary'}`}
-                    onClick={() => setFilterLevel('HIGH')}
-                  >
-                    High Match (&ge;80%)
-                  </button>
-                  <button
-                    className={`btn ${filterLevel === 'MODERATE' ? 'btn-warning' : 'btn-outline-secondary'}`}
-                    onClick={() => setFilterLevel('MODERATE')}
-                  >
-                    Moderate (60-79%)
-                  </button>
-                  <button
-                    className={`btn ${filterLevel === 'LOW' ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                    onClick={() => setFilterLevel('LOW')}
-                  >
-                    Low (&lt;60%)
-                  </button>
-                </div>
-              </div>
-            </div>
+        ) : resumes.length === 0 ? (
+          <div className="card bg-white p-5 text-center" style={cardStyle}>
+            <i className="bi bi-file-earmark-arrow-up fs-1 text-muted"></i>
+            <h5 className="fw-bold text-dark mt-3">Upload a Resume First</h5>
+            <p className="text-muted small mb-3">
+              We need an uploaded resume to calculate your compatibility score against job openings.
+            </p>
+            <Link
+              to="/resumes"
+              className="btn text-white fw-semibold px-4 mx-auto"
+              style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+            >
+              Upload Resume
+            </Link>
           </div>
-        )}
-
-        {/* Loading Skeleton */}
-        {loading && (
-          <div className="text-center py-5">
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Calculating Compatibility...</span>
-            </div>
-            <p className="text-muted small mt-2">Comparing resume skills against job requirements...</p>
+        ) : filteredMatches.length === 0 ? (
+          <div className="card bg-white p-5 text-center" style={cardStyle}>
+            <i className="bi bi-search fs-1 text-muted"></i>
+            <h5 className="fw-bold text-dark mt-3">No Job Matches Above {minScoreFilter}%</h5>
+            <p className="text-muted small mb-0">
+              Try lowering the minimum match filter or seeding sample jobs in the Job Explorer.
+            </p>
           </div>
-        )}
+        ) : (
+          <div className="d-flex flex-column gap-3">
+            {filteredMatches.map((item, index) => {
+              const job = item.job || item;
+              const jId = job.id || item.job_id || index;
+              const score = Math.round(Number(item.match_score ?? 0));
+              const theme = getScoreTheme(score);
+              const offset = ringCircumference - (Math.min(100, score) / 100) * ringCircumference;
+              const matchedSkills = Array.isArray(item.matched_skills) ? item.matched_skills : [];
+              const missingSkills = Array.isArray(item.missing_skills) ? item.missing_skills : [];
 
-        {/* Match Cards List */}
-        {!loading && resumes.length > 0 && (
-          <div className="row g-3">
-            {filteredMatches.length === 0 ? (
-              <div className="col-12 text-center py-5">
-                <i className="bi bi-search fs-1 text-muted"></i>
-                <p className="text-muted mt-2">No job matches found matching current filters.</p>
-              </div>
-            ) : (
-              filteredMatches.map((item) => (
-                <div className="col-12" key={item.id}>
-                  <div className="card shadow-sm border-0 rounded-3 p-3 bg-white h-100">
-                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3">
-                      {/* Left: Role Info */}
-                      <div className="flex-grow-1">
-                        <div className="d-flex flex-wrap align-items-center gap-2 mb-1">
-                          <h5 className="fw-bold text-dark mb-0">{item.job.title}</h5>
-                          <span className="badge bg-light text-dark border">
-                            <i className="bi bi-building me-1"></i> {item.job.company}
+              return (
+                <div key={jId} className="card bg-white p-4 hover-card" style={cardStyle}>
+                  <div className="row align-items-center g-4">
+                    {/* Left: Role & Company Info */}
+                    <div className="col-lg-4">
+                      <div className="d-flex align-items-start gap-3">
+                        <div
+                          className="d-inline-flex align-items-center justify-content-center rounded-3 fw-bold flex-shrink-0"
+                          style={{
+                            width: '48px',
+                            height: '48px',
+                            backgroundColor: '#EEF2FF',
+                            color: '#4F46E5',
+                            fontSize: '16px',
+                          }}
+                        >
+                          {(job.company || 'CO').slice(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <span
+                            className="badge rounded-pill px-2.5 py-0.5 fw-semibold mb-1"
+                            style={{ backgroundColor: theme.bg, color: theme.color, fontSize: '11px' }}
+                          >
+                            {theme.label}
                           </span>
-                          <span className="badge bg-light text-muted border">
-                            <i className="bi bi-geo-alt me-1"></i> {item.job.location}
-                          </span>
-                          <span className="badge bg-light text-muted border">
-                            <i className="bi bi-briefcase me-1"></i> {item.job.job_type}
-                          </span>
-                          {item.job.salary_range && (
-                            <span className="badge bg-success bg-opacity-10 text-success fw-semibold">
-                              <i className="bi bi-currency-rupee"></i> {item.job.salary_range}
-                            </span>
+                          <h5 className="fw-bold text-dark mb-1">{job.title || item.job_title}</h5>
+                          <div className="text-muted small">
+                            <strong className="text-dark fw-semibold">{job.company}</strong> •{' '}
+                            {job.location || 'Remote'}
+                          </div>
+                          {job.salary_range && (
+                            <div className="small fw-semibold text-success mt-1">
+                              {job.salary_range}
+                            </div>
                           )}
                         </div>
+                      </div>
+                    </div>
 
-                        <p className="text-muted small mb-2" style={{ maxWidth: '780px' }}>
-                          {item.job.description.slice(0, 160)}...
-                        </p>
-
-                        {/* Matched & Missing Skills Tags */}
-                        <div className="d-flex flex-wrap align-items-center gap-1 mb-2">
-                          <span className="small text-muted me-1 fw-semibold">Matched:</span>
-                          {item.matched_skills.length > 0 ? (
-                            item.matched_skills.map((skill, idx) => (
-                              <span key={idx} className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 rounded-pill px-2 py-1 small">
-                                <i className="bi bi-check me-1"></i> {skill}
+                    {/* Center: Matched vs Missing Skill Chips */}
+                    <div className="col-lg-5">
+                      <div className="mb-2">
+                        <div className="text-muted fw-semibold mb-1" style={{ fontSize: '11.5px' }}>
+                          Matched Skills ({matchedSkills.length})
+                        </div>
+                        <div className="d-flex flex-wrap gap-1">
+                          {matchedSkills.length > 0 ? (
+                            matchedSkills.map((s, i) => (
+                              <span
+                                key={i}
+                                className="badge fw-medium"
+                                style={{ backgroundColor: '#ECFDF5', color: '#059669', fontSize: '11px' }}
+                              >
+                                ✓ {s}
                               </span>
                             ))
                           ) : (
-                            <span className="text-muted small fst-italic">None detected</span>
-                          )}
-
-                          {item.missing_skills.length > 0 && (
-                            <>
-                              <span className="small text-muted ms-2 me-1 fw-semibold">Missing Gaps:</span>
-                              {item.missing_skills.slice(0, 4).map((skill, idx) => (
-                                <span key={idx} className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 rounded-pill px-2 py-1 small">
-                                  <i className="bi bi-x me-1"></i> {skill}
-                                </span>
-                              ))}
-                              {item.missing_skills.length > 4 && (
-                                <span className="badge bg-light text-muted rounded-pill small">
-                                  +{item.missing_skills.length - 4} more
-                                </span>
-                              )}
-                            </>
+                            <span className="small text-muted fst-italic">None matched</span>
                           )}
                         </div>
                       </div>
 
-                      {/* Right: Score Gauge & Action */}
-                      <div className="d-flex flex-md-column align-items-center justify-content-between text-end border-start-md ps-md-3" style={{ minWidth: '150px' }}>
-                        <div className="text-center mb-md-2">
-                          <span className={`badge rounded-pill px-3 py-2 fs-6 fw-bold ${getScoreBadgeClass(item.match_score)}`}>
-                            {item.match_score}% Match
-                          </span>
-                          <div className="small fw-semibold text-muted mt-1">{item.match_level}</div>
+                      <div>
+                        <div className="text-muted fw-semibold mb-1" style={{ fontSize: '11.5px' }}>
+                          Skill Gaps to Bridge ({missingSkills.length})
                         </div>
+                        <div className="d-flex flex-wrap gap-1">
+                          {missingSkills.length > 0 ? (
+                            missingSkills.map((s, i) => (
+                              <span
+                                key={i}
+                                className="badge fw-medium"
+                                style={{ backgroundColor: '#FEF2F2', color: '#DC2626', fontSize: '11px' }}
+                              >
+                                + {s}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="small text-success fw-medium">All required skills matched!</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
+                    {/* Right: Circular Match Gauge + Actions */}
+                    <div className="col-lg-3 d-flex flex-row flex-lg-column align-items-center align-items-lg-end justify-content-between gap-3">
+                      <div className="d-flex align-items-center gap-3">
+                        <div className="position-relative d-inline-flex align-items-center justify-content-center">
+                          <svg width="70" height="70" style={{ transform: 'rotate(-90deg)' }}>
+                            <circle cx="35" cy="35" r={ringRadius} stroke="#E2E8F0" strokeWidth="6" fill="transparent" />
+                            <circle
+                              cx="35"
+                              cy="35"
+                              r={ringRadius}
+                              stroke={theme.color}
+                              strokeWidth="6"
+                              fill="transparent"
+                              strokeDasharray={ringCircumference}
+                              strokeDashoffset={offset}
+                              strokeLinecap="round"
+                            />
+                          </svg>
+                          <span className="position-absolute fw-bold small" style={{ color: '#0F172A' }}>
+                            {score}%
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="d-flex gap-2">
                         <button
-                          className="btn btn-outline-primary btn-sm px-3"
-                          onClick={() => setSelectedMatch(item)}
+                          type="button"
+                          onClick={() => setSelectedMatchModal(item)}
+                          className="btn btn-sm fw-semibold px-3"
+                          style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
                         >
-                          <i className="bi bi-eye me-1"></i> Scorecard
+                          Scorecard
+                        </button>
+                        <button
+                          type="button"
+                          disabled={savingJobId === jId}
+                          onClick={() => handleSaveToTracker(job)}
+                          className="btn btn-sm text-white fw-semibold px-3"
+                          style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
+                        >
+                          {savingJobId === jId ? 'Saving...' : 'Save Job'}
                         </button>
                       </div>
                     </div>
                   </div>
                 </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {/* Modal: Detailed Match Breakdown Scorecard */}
-        {selectedMatch && (
-          <div className="modal fade show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)' }}>
-            <div className="modal-dialog modal-dialog-centered modal-lg">
-              <div className="modal-content border-0 shadow-lg rounded-3">
-                <div className="modal-header border-bottom py-3">
-                  <div>
-                    <h5 className="modal-title fw-bold text-dark mb-0">
-                      {selectedMatch.job.title} — Compatibility Breakdown
-                    </h5>
-                    <small className="text-muted">{selectedMatch.job.company} &bull; {selectedMatch.job.location}</small>
-                  </div>
-                  <button type="button" className="btn-close" onClick={() => setSelectedMatch(null)}></button>
-                </div>
-
-                <div className="modal-body p-4">
-                  {/* Summary Metric Ribbon */}
-                  <div className="row g-3 text-center mb-4">
-                    <div className="col-4">
-                      <div className="p-3 bg-light rounded-3 border">
-                        <small className="text-muted fw-semibold d-block">Overall Match</small>
-                        <span className="fs-3 fw-bold text-primary">{selectedMatch.match_score}%</span>
-                        <div className="small text-muted">{selectedMatch.match_level}</div>
-                      </div>
-                    </div>
-                    <div className="col-4">
-                      <div className="p-3 bg-light rounded-3 border">
-                        <small className="text-muted fw-semibold d-block">Skill Match (50%)</small>
-                        <span className="fs-3 fw-bold text-success">{selectedMatch.skill_score}%</span>
-                        <div className="small text-muted">{selectedMatch.matched_skills.length} matched</div>
-                      </div>
-                    </div>
-                    <div className="col-4">
-                      <div className="p-3 bg-light rounded-3 border">
-                        <small className="text-muted fw-semibold d-block">Experience (30%)</small>
-                        <span className="fs-3 fw-bold text-info">{selectedMatch.experience_score}%</span>
-                        <div className="small text-muted">&ge; {selectedMatch.job.min_experience_years} yrs req.</div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Summary explanation */}
-                  <div className="alert alert-light border small text-muted mb-4">
-                    <i className="bi bi-info-circle text-primary me-2"></i>
-                    {selectedMatch.summary}
-                  </div>
-
-                  {/* Matched Skills */}
-                  <div className="mb-3">
-                    <h6 className="fw-bold text-success small mb-2 d-flex align-items-center">
-                      <i className="bi bi-check-circle-fill me-2"></i> Matched Technical Skills
-                    </h6>
-                    <div className="d-flex flex-wrap gap-1">
-                      {selectedMatch.matched_skills.length > 0 ? (
-                        selectedMatch.matched_skills.map((s, idx) => (
-                          <span key={idx} className="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25 px-2 py-1 rounded-pill">
-                            {s}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-muted small">No direct skill matches detected.</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Missing Skills Gap */}
-                  <div className="mb-4">
-                    <h6 className="fw-bold text-danger small mb-2 d-flex align-items-center">
-                      <i className="bi bi-exclamation-octagon-fill me-2"></i> Skill Gaps to Improve
-                    </h6>
-                    <div className="d-flex flex-wrap gap-1">
-                      {selectedMatch.missing_skills.length > 0 ? (
-                        selectedMatch.missing_skills.map((s, idx) => (
-                          <span key={idx} className="badge bg-danger bg-opacity-10 text-danger border border-danger border-opacity-25 px-2 py-1 rounded-pill">
-                            {s}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-success small fw-semibold">Great job! You have all required skills.</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Job Description Excerpt */}
-                  <div className="border-top pt-3">
-                    <h6 className="fw-bold text-dark small mb-1">Job Responsibilities & Scope</h6>
-                    <p className="text-muted small mb-0" style={{ whiteSpace: 'pre-line' }}>
-                      {selectedMatch.job.description}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="modal-footer border-top py-2">
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSelectedMatch(null)}>
-                    Close
-                  </button>
-                  <Link to="/job-descriptions" className="btn btn-primary-custom btn-sm">
-                    View in Job Explorer
-                  </Link>
-                </div>
-              </div>
-            </div>
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Detailed Match Scorecard Modal */}
+      {selectedMatchModal && (
+        <div
+          className="modal show fade d-block"
+          tabIndex="-1"
+          style={{ backgroundColor: 'rgba(15, 23, 42, 0.55)', backdropFilter: 'blur(4px)' }}
+        >
+          <div className="modal-dialog modal-dialog-centered modal-lg">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+              <div className="modal-header bg-white border-bottom px-4 py-3">
+                <div>
+                  <h5 className="modal-title fw-bold text-dark mb-0">
+                    Compatibility Scorecard — {selectedMatchModal.job?.title || selectedMatchModal.job_title}
+                  </h5>
+                  <div className="text-muted small">
+                    {selectedMatchModal.job?.company || selectedMatchModal.company}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn-close"
+                  onClick={() => setSelectedMatchModal(null)}
+                ></button>
+              </div>
+
+              <div className="modal-body p-4" style={{ backgroundColor: '#F8FAFC' }}>
+                <div className="bg-white p-4 rounded-4 mb-3" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <span className="fw-bold text-dark">Weighted Compatibility Breakdown</span>
+                    <span
+                      className="badge rounded-pill px-3 py-2 fw-bold"
+                      style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '14px' }}
+                    >
+                      Overall: {Math.round(Number(selectedMatchModal.match_score ?? 0))}%
+                    </span>
+                  </div>
+
+                  {[
+                    {
+                      label: 'Technical & Core Skill Overlap (50% Weight)',
+                      score: Math.round(Number(selectedMatchModal.skill_score ?? selectedMatchModal.match_score ?? 0)),
+                      color: '#4F46E5',
+                    },
+                    {
+                      label: 'Experience Level Alignment (30% Weight)',
+                      score: Math.round(Number(selectedMatchModal.experience_score ?? 85)),
+                      color: '#10B981',
+                    },
+                    {
+                      label: 'Job Description Keyword Density (20% Weight)',
+                      score: Math.round(Number(selectedMatchModal.keyword_score ?? selectedMatchModal.match_score ?? 0)),
+                      color: '#2563EB',
+                    },
+                  ].map((bar, idx) => (
+                    <div key={idx} className={idx < 2 ? 'mb-3' : 'mb-0'}>
+                      <div className="d-flex justify-content-between small mb-1">
+                        <span className="fw-medium text-dark">{bar.label}</span>
+                        <span className="fw-bold" style={{ color: bar.color }}>
+                          {bar.score}%
+                        </span>
+                      </div>
+                      <div className="progress" style={{ height: '7px', backgroundColor: '#E2E8F0' }}>
+                        <div
+                          className="progress-bar"
+                          style={{ width: `${bar.score}%`, backgroundColor: bar.color, borderRadius: '4px' }}
+                        ></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedMatchModal.explanation && (
+                  <div className="bg-white p-4 rounded-4" style={{ border: '1px solid #E2E8F0' }}>
+                    <h6 className="fw-bold text-dark mb-2">
+                      <i className="bi bi-lightbulb-fill me-2" style={{ color: '#4F46E5' }}></i>
+                      Matching Engine Summary
+                    </h6>
+                    <p className="small text-muted mb-0" style={{ lineHeight: 1.6 }}>
+                      {selectedMatchModal.explanation}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer bg-white border-top px-4 py-3">
+                <button
+                  type="button"
+                  className="btn btn-sm fw-semibold px-3"
+                  style={{ backgroundColor: '#F1F5F9', color: '#334155', borderRadius: '8px' }}
+                  onClick={() => setSelectedMatchModal(null)}
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveToTracker(selectedMatchModal.job || selectedMatchModal)}
+                  className="btn btn-sm text-white fw-semibold px-4"
+                  style={{ backgroundColor: '#4F46E5', borderRadius: '8px' }}
+                >
+                  <i className="bi bi-bookmark-plus me-1"></i> Add to Kanban Tracker
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

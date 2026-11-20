@@ -1,333 +1,383 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { interviewService } from '../../services/interviewService';
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import api from '../../services/api';
+
+const CATEGORIES = ['All', 'Technical', 'HR', 'Behavioral', 'Project-based'];
+const DIFFICULTIES = ['All', 'Easy', 'Medium', 'Hard'];
 
 const QuestionBank = () => {
   const [questions, setQuestions] = useState([]);
+  const [bookmarkedIds, setBookmarkedIds] = useState(new Set());
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
 
-  // Filters & State
-  const [activeCategory, setActiveCategory] = useState('All');
-  const [activeDifficulty, setActiveDifficulty] = useState('All');
+  // Filters & UI state
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedDifficulty, setSelectedDifficulty] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
-  const [bookmarkedOnly, setBookmarkedOnly] = useState(false);
-  const [expandedQuestionId, setExpandedQuestionId] = useState(null);
-  const [stats, setStats] = useState({ total: 0, bookmarks: 0 });
+  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
+  const [expandedIds, setExpandedIds] = useState({});
 
-  const categories = ['All', 'Technical', 'HR', 'Behavioral', 'Project-based'];
-  const difficulties = ['All', 'Easy', 'Medium', 'Hard'];
+  const showToast = (type, message) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 3500);
+  };
 
-  const fetchQuestions = useCallback(async () => {
+  const fetchQuestionsAndBookmarks = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const params = {};
-      if (activeCategory !== 'All') params.category = activeCategory;
-      if (activeDifficulty !== 'All') params.difficulty = activeDifficulty;
-      if (searchQuery.trim()) params.search = searchQuery.trim();
-      if (bookmarkedOnly) params.bookmarked_only = true;
+      const [qRes, bRes] = await Promise.allSettled([
+        api.get('/interviews/questions/'),
+        api.get('/interviews/bookmarks/'),
+      ]);
 
-      const data = await interviewService.getQuestions(params);
-      setQuestions(data.questions || []);
-      setStats({
-        total: data.total_in_system || 0,
-        bookmarks: data.user_bookmarks_count || 0,
-      });
+      if (qRes.status === 'fulfilled') {
+        const qList = Array.isArray(qRes.value.data)
+          ? qRes.value.data
+          : qRes.value.data?.results || [];
+        setQuestions(qList);
+      }
+
+      if (bRes.status === 'fulfilled') {
+        const bList = Array.isArray(bRes.value.data)
+          ? bRes.value.data
+          : bRes.value.data?.results || [];
+        const ids = new Set(
+          bList.map((b) => b.question?.id || b.question_id || b.id)
+        );
+        setBookmarkedIds(ids);
+      }
     } catch (err) {
-      console.error('Failed to load questions:', err);
-      setError('Failed to load interview questions. Please ensure your backend server is running.');
+      showToast('danger', 'Unable to load interview questions.');
     } finally {
       setLoading(false);
     }
-  }, [activeCategory, activeDifficulty, searchQuery, bookmarkedOnly]);
+  };
 
   useEffect(() => {
-    fetchQuestions();
-  }, [fetchQuestions]);
+    fetchQuestionsAndBookmarks();
+  }, []);
 
-  const handleToggleBookmark = async (id) => {
+  const handleToggleBookmark = async (questionId) => {
     try {
-      const res = await interviewService.toggleBookmark(id);
-      setQuestions((prev) =>
-        prev.map((q) => (q.id === id ? { ...q, is_bookmarked: res.is_bookmarked } : q))
-      );
-      setStats((prev) => ({
-        ...prev,
-        bookmarks: res.is_bookmarked ? prev.bookmarks + 1 : Math.max(0, prev.bookmarks - 1),
-      }));
+      await api.post(`/interviews/questions/${questionId}/bookmark/`);
+      setBookmarkedIds((prev) => {
+        const next = new Set(prev);
+        if (next.has(questionId)) {
+          next.delete(questionId);
+          showToast('info', 'Removed from saved questions.');
+        } else {
+          next.add(questionId);
+          showToast('success', 'Question bookmarked for revision!');
+        }
+        return next;
+      });
     } catch (err) {
-      alert('Unable to update bookmark status.');
+      showToast('danger', 'Could not update bookmark.');
     }
   };
 
-  const getDifficultyBadge = (difficulty) => {
-    switch (difficulty) {
-      case 'Easy':
-        return <span className="badge bg-success-subtle text-success border border-success-subtle px-2 py-1">Easy</span>;
-      case 'Medium':
-        return <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle px-2 py-1">Medium</span>;
-      case 'Hard':
-        return <span className="badge bg-danger-subtle text-danger border border-danger-subtle px-2 py-1">Hard</span>;
-      default:
-        return <span className="badge bg-secondary px-2 py-1">{difficulty}</span>;
-    }
+  const toggleExpand = (id) => {
+    setExpandedIds((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const getCategoryBadge = (category) => {
-    switch (category) {
-      case 'Technical':
-        return <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2 py-1"><i className="bi bi-code-slash me-1"></i>Technical</span>;
-      case 'HR':
-        return <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle px-2 py-1"><i className="bi bi-people me-1"></i>HR & Culture</span>;
-      case 'Behavioral':
-        return <span className="badge bg-purple-subtle text-purple border border-purple px-2 py-1" style={{ backgroundColor: '#f3e8ff', color: '#7c3aed' }}><i className="bi bi-star me-1"></i>Behavioral (STAR)</span>;
-      case 'Project-based':
-        return <span className="badge bg-secondary-subtle text-dark border border-secondary-subtle px-2 py-1"><i className="bi bi-diagram-3 me-1"></i>Project Architecture</span>;
-      default:
-        return <span className="badge bg-light text-dark px-2 py-1">{category}</span>;
-    }
+  const filteredQuestions = questions.filter((q) => {
+    const matchesCat =
+      selectedCategory === 'All' ||
+      (q.category || '').toLowerCase() === selectedCategory.toLowerCase();
+    const matchesDiff =
+      selectedDifficulty === 'All' ||
+      (q.difficulty || '').toLowerCase() === selectedDifficulty.toLowerCase();
+    const matchesSearch =
+      !searchQuery.trim() ||
+      (q.question_text || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (q.category || '').toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesBookmark = !onlyBookmarked || bookmarkedIds.has(q.id);
+
+    return matchesCat && matchesDiff && matchesSearch && matchesBookmark;
+  });
+
+  const getCategoryStyle = (cat) => {
+    const c = (cat || '').toLowerCase();
+    if (c === 'technical') return { bg: '#EEF2FF', color: '#4F46E5' };
+    if (c === 'behavioral') return { bg: '#ECFDF5', color: '#059669' };
+    if (c === 'hr') return { bg: '#EFF6FF', color: '#2563EB' };
+    return { bg: '#FFFBEB', color: '#D97706' };
+  };
+
+  const getDifficultyStyle = (diff) => {
+    const d = (diff || '').toLowerCase();
+    if (d === 'easy') return { bg: '#ECFDF5', color: '#059669' };
+    if (d === 'hard') return { bg: '#FEF2F2', color: '#DC2626' };
+    return { bg: '#FFFBEB', color: '#D97706' };
+  };
+
+  const cardStyle = {
+    borderRadius: '16px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.03)',
   };
 
   return (
-    <div className="min-vh-100 bg-light">
+    <div className="py-4" style={{ backgroundColor: '#F8FAFC' }}>
+      <div className="container">
+        {toast && (
+          <div
+            className={`alert alert-${toast.type === 'info' ? 'primary' : toast.type} d-flex align-items-center justify-content-between rounded-4 shadow-sm mb-4`}
+          >
+            <span className="small fw-semibold">{toast.message}</span>
+            <button type="button" className="btn-close btn-sm" onClick={() => setToast(null)}></button>
+          </div>
+        )}
 
-      <div className="container py-4">
-        {/* Header Block */}
-        <div className="row align-items-center mb-4 g-3">
-          <div className="col-md-7">
-            <h3 className="fw-bold text-dark mb-1 d-flex align-items-center">
-              <i className="bi bi-collection-play-fill text-primary me-2"></i>
+        {/* Top Header */}
+        <div className="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
+          <div>
+            <span
+              className="badge rounded-pill px-3 py-1 fw-semibold mb-1"
+              style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', fontSize: '11.5px' }}
+            >
+              <i className="bi bi-journal-code me-1"></i> Curated Knowledge Base
+            </span>
+            <h2 className="fw-bold mb-1" style={{ color: '#0F172A', letterSpacing: '-0.02em' }}>
               Interview Question Bank
-            </h3>
+            </h2>
             <p className="text-muted small mb-0">
-              Curated technical, HR, behavioral, and project architecture questions with model answers.
+              Explore categorized Technical, HR, Behavioral (STAR), and Project questions with ideal talking points.
             </p>
           </div>
-          <div className="col-md-5 text-md-end d-flex align-items-center justify-content-md-end gap-2">
-            <div className="p-2 px-3 bg-white border rounded shadow-sm d-inline-flex align-items-center">
-              <i className="bi bi-bookmark-fill text-warning me-2 fs-5"></i>
-              <div className="text-start">
-                <div className="small fw-bold text-dark">{stats.bookmarks} Saved</div>
-                <div className="text-muted" style={{ fontSize: '11px' }}>of {stats.total} total</div>
-              </div>
-            </div>
-            <button
-              className="btn btn-outline-primary btn-sm"
-              onClick={fetchQuestions}
-              title="Refresh Question Catalog"
+
+          <div className="d-flex gap-2">
+            <Link
+              to="/interview-prep"
+              className="btn btn-sm bg-white fw-semibold px-3 py-2"
+              style={{ border: '1px solid #CBD5E1', color: '#334155', borderRadius: '10px' }}
             >
-              <i className="bi bi-arrow-clockwise me-1"></i> Refresh
+              <i className="bi bi-compass me-1 text-primary"></i> Prep Hub
+            </Link>
+            <Link
+              to="/mock-interview"
+              className="btn btn-sm text-white fw-semibold px-3 py-2 shadow-sm"
+              style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+            >
+              <i className="bi bi-mic-fill me-1"></i> Start Mock Interview
+            </Link>
+          </div>
+        </div>
+
+        {/* Category Tabs + Search & Filter Card */}
+        <div className="card bg-white p-3 p-md-4 mb-4" style={cardStyle}>
+          {/* Category Pill Tabs */}
+          <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 pb-3 mb-3 border-bottom">
+            <div className="d-flex flex-wrap gap-2">
+              {CATEGORIES.map((cat) => {
+                const active = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat)}
+                    className="btn btn-sm fw-semibold px-3 py-1.5"
+                    style={{
+                      borderRadius: '10px',
+                      backgroundColor: active ? '#4F46E5' : '#F8FAFC',
+                      color: active ? '#FFFFFF' : '#475569',
+                      border: '1px solid #E2E8F0',
+                    }}
+                  >
+                    {cat}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setOnlyBookmarked(!onlyBookmarked)}
+              className="btn btn-sm fw-semibold px-3 py-1.5"
+              style={{
+                borderRadius: '10px',
+                backgroundColor: onlyBookmarked ? '#FFFBEB' : '#F8FAFC',
+                color: onlyBookmarked ? '#D97706' : '#475569',
+                border: `1px solid ${onlyBookmarked ? '#FDE68A' : '#E2E8F0'}`,
+              }}
+            >
+              <i className={`bi ${onlyBookmarked ? 'bi-bookmark-fill' : 'bi-bookmark'} me-1`}></i>
+              Saved ({bookmarkedIds.size})
             </button>
           </div>
-        </div>
 
-        {/* Filter Bar */}
-        <div className="card border-0 shadow-sm rounded-3 mb-4">
-          <div className="card-body p-3">
-            <div className="row g-3 align-items-center">
-              {/* Search Bar */}
-              <div className="col-12 col-md-5">
-                <div className="input-group">
-                  <span className="input-group-text bg-light border-end-0">
-                    <i className="bi bi-search text-muted"></i>
-                  </span>
-                  <input
-                    type="text"
-                    className="form-control bg-light border-start-0"
-                    placeholder="Search keywords or roles (e.g., Python, N+1, STAR)..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                  />
-                  {searchQuery && (
-                    <button
-                      className="btn btn-light border"
-                      type="button"
-                      onClick={() => setSearchQuery('')}
-                    >
-                      <i className="bi bi-x"></i>
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Difficulty Dropdown */}
-              <div className="col-6 col-md-3">
-                <select
-                  className="form-select bg-light"
-                  value={activeDifficulty}
-                  onChange={(e) => setActiveDifficulty(e.target.value)}
+          {/* Search & Difficulty Controls */}
+          <div className="row g-3 align-items-center">
+            <div className="col-md-7">
+              <div className="input-group">
+                <span
+                  className="input-group-text border-end-0"
+                  style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0' }}
                 >
-                  {difficulties.map((d) => (
-                    <option key={d} value={d}>
-                      Difficulty: {d}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Bookmarked Filter Toggle */}
-              <div className="col-6 col-md-4 text-end">
-                <button
-                  type="button"
-                  className={`btn w-100 ${
-                    bookmarkedOnly ? 'btn-warning' : 'btn-outline-secondary'
-                  }`}
-                  onClick={() => setBookmarkedOnly(!bookmarkedOnly)}
-                >
-                  <i className={`bi ${bookmarkedOnly ? 'bi-bookmark-check-fill' : 'bi-bookmark'} me-1`}></i>
-                  {bookmarkedOnly ? 'Showing Saved Only' : 'Saved Questions'}
-                </button>
+                  <i className="bi bi-search text-muted"></i>
+                </span>
+                <input
+                  type="text"
+                  className="form-control border-start-0"
+                  style={{ backgroundColor: '#F8FAFC', borderColor: '#E2E8F0', fontSize: '13.5px' }}
+                  placeholder="Search questions by keyword or concept..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
             </div>
 
-            {/* Category Pills */}
-            <div className="d-flex flex-wrap gap-2 mt-3 pt-3 border-top">
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  className={`btn btn-sm rounded-pill px-3 ${
-                    activeCategory === cat ? 'btn-primary' : 'btn-outline-secondary'
-                  }`}
-                  onClick={() => setActiveCategory(cat)}
-                >
-                  {cat === 'All' ? 'All Categories' : cat}
-                </button>
-              ))}
+            <div className="col-md-5 d-flex flex-wrap align-items-center justify-content-md-end gap-1">
+              <span className="small text-muted me-1">Difficulty:</span>
+              {DIFFICULTIES.map((diff) => {
+                const active = selectedDifficulty === diff;
+                return (
+                  <button
+                    key={diff}
+                    type="button"
+                    onClick={() => setSelectedDifficulty(diff)}
+                    className="btn btn-sm fw-semibold px-2.5 py-1"
+                    style={{
+                      borderRadius: '8px',
+                      fontSize: '11.5px',
+                      backgroundColor: active ? '#0F172A' : '#F8FAFC',
+                      color: active ? '#FFFFFF' : '#475569',
+                      border: '1px solid #E2E8F0',
+                    }}
+                  >
+                    {diff}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
 
-        {/* Content Area */}
+        {/* Questions List */}
         {loading ? (
           <div className="text-center py-5">
-            <div className="spinner-border text-primary" role="status">
-              <span className="visually-hidden">Loading questions...</span>
-            </div>
-            <p className="text-muted mt-2 small">Loading questions...</p>
+            <div className="spinner-border" style={{ color: '#4F46E5' }} role="status"></div>
+            <div className="text-muted small mt-2">Loading curated interview questions...</div>
           </div>
-        ) : error ? (
-          <div className="alert alert-danger shadow-sm text-center py-4">
-            <i className="bi bi-exclamation-triangle-fill fs-3 mb-2 d-block"></i>
-            <div>{error}</div>
-            <button className="btn btn-outline-danger btn-sm mt-3" onClick={fetchQuestions}>
-              Try Again
+        ) : filteredQuestions.length === 0 ? (
+          <div className="card bg-white p-5 text-center" style={cardStyle}>
+            <i className="bi bi-journal-x fs-1 text-muted"></i>
+            <h5 className="fw-bold text-dark mt-3">No Questions Match Your Filters</h5>
+            <p className="text-muted small mb-3">
+              Reset your category, difficulty, or bookmark filters to view all available prompts.
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedCategory('All');
+                setSelectedDifficulty('All');
+                setSearchQuery('');
+                setOnlyBookmarked(false);
+              }}
+              className="btn btn-sm text-white fw-semibold px-4 mx-auto"
+              style={{ backgroundColor: '#4F46E5', borderRadius: '10px' }}
+            >
+              Reset All Filters
             </button>
           </div>
-        ) : questions.length === 0 ? (
-          <div className="card border-0 shadow-sm rounded-3 text-center py-5">
-            <div className="card-body">
-              <i className="bi bi-inbox text-muted display-4"></i>
-              <h5 className="fw-bold mt-3 text-dark">No questions match your filter criteria</h5>
-              <p className="text-muted small">
-                Try switching categories or clearing search keywords.
-              </p>
-              <button
-                className="btn btn-outline-primary btn-sm mt-2"
-                onClick={() => {
-                  setActiveCategory('All');
-                  setActiveDifficulty('All');
-                  setSearchQuery('');
-                  setBookmarkedOnly(false);
-                }}
-              >
-                Reset All Filters
-              </button>
-            </div>
-          </div>
         ) : (
-          <div className="row g-3">
-            {questions.map((q) => {
-              const isExpanded = expandedQuestionId === q.id;
+          <div className="d-flex flex-column gap-3">
+            {filteredQuestions.map((q) => {
+              const isSaved = bookmarkedIds.has(q.id);
+              const isExpanded = Boolean(expandedIds[q.id]);
+              const catStyle = getCategoryStyle(q.category);
+              const diffStyle = getDifficultyStyle(q.difficulty);
+              const points = Array.isArray(q.ideal_points)
+                ? q.ideal_points
+                : typeof q.ideal_points === 'string' && q.ideal_points.trim()
+                ? q.ideal_points.split('\n').filter(Boolean)
+                : [];
+
               return (
-                <div key={q.id} className="col-12">
-                  <div
-                    className={`card border-0 shadow-sm rounded-3 transition ${
-                      isExpanded ? 'border-primary border' : ''
-                    }`}
-                  >
-                    <div className="card-body p-4">
-                      {/* Top Badges & Bookmark Action */}
-                      <div className="d-flex justify-content-between align-items-start mb-2">
-                        <div className="d-flex flex-wrap align-items-center gap-2">
-                          {getCategoryBadge(q.category)}
-                          {getDifficultyBadge(q.difficulty)}
-                          <span className="badge bg-light text-muted border px-2 py-1">
-                            <i className="bi bi-person-badge me-1"></i>
-                            {q.role_target}
-                          </span>
-                        </div>
-                        <button
-                          className={`btn btn-sm rounded-circle p-1 px-2 ${
-                            q.is_bookmarked
-                              ? 'btn-warning text-dark'
-                              : 'btn-outline-secondary'
-                          }`}
-                          style={{ width: '34px', height: '34px' }}
-                          title={q.is_bookmarked ? 'Remove Bookmark' : 'Save Question'}
-                          onClick={() => handleToggleBookmark(q.id)}
+                <div key={q.id} className="card bg-white p-4 hover-card" style={cardStyle}>
+                  <div className="d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                      <div className="d-flex flex-wrap align-items-center gap-2 mb-2">
+                        <span
+                          className="badge rounded-pill px-3 py-1 fw-semibold"
+                          style={{ backgroundColor: catStyle.bg, color: catStyle.color, fontSize: '11.5px' }}
                         >
-                          <i className={`bi ${q.is_bookmarked ? 'bi-bookmark-fill' : 'bi-bookmark'}`}></i>
-                        </button>
+                          {q.category || 'Technical'}
+                        </span>
+                        <span
+                          className="badge rounded-pill px-2.5 py-1 fw-semibold"
+                          style={{ backgroundColor: diffStyle.bg, color: diffStyle.color, fontSize: '11px' }}
+                        >
+                          {q.difficulty || 'Medium'}
+                        </span>
                       </div>
 
-                      {/* Question Text */}
-                      <h5 className="fw-semibold text-dark mt-2 mb-3">
+                      <h6 className="fw-bold text-dark mb-0" style={{ lineHeight: 1.5, fontSize: '15.5px' }}>
                         {q.question_text}
-                      </h5>
+                      </h6>
+                    </div>
 
-                      {/* Expandable Answers & Ideal Points */}
-                      {isExpanded ? (
-                        <div className="mt-3 pt-3 border-top">
-                          <div className="mb-3">
-                            <h6 className="fw-bold text-primary small text-uppercase mb-2">
-                              <i className="bi bi-lightbulb-fill me-1 text-warning"></i>
-                              Key Points Interviewers Look For:
-                            </h6>
-                            <ul className="list-unstyled mb-0 ms-2">
-                              {q.ideal_points && q.ideal_points.map((pt, idx) => (
-                                <li key={idx} className="small text-dark mb-1 d-flex align-items-start">
-                                  <i className="bi bi-check-circle-fill text-success me-2 mt-1" style={{ fontSize: '12px' }}></i>
-                                  <span>{pt}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
+                    <button
+                      type="button"
+                      onClick={() => handleToggleBookmark(q.id)}
+                      className="btn btn-sm flex-shrink-0"
+                      style={{
+                        backgroundColor: isSaved ? '#FFFBEB' : '#F8FAFC',
+                        color: isSaved ? '#D97706' : '#64748B',
+                        border: `1px solid ${isSaved ? '#FDE68A' : '#E2E8F0'}`,
+                        borderRadius: '10px',
+                      }}
+                      title={isSaved ? 'Remove bookmark' : 'Bookmark question'}
+                    >
+                      <i className={`bi ${isSaved ? 'bi-bookmark-fill' : 'bi-bookmark'}`}></i>
+                    </button>
+                  </div>
 
-                          {q.sample_answer && (
-                            <div className="p-3 bg-light rounded-3 border">
-                              <div className="fw-bold text-dark small mb-1">
-                                <i className="bi bi-chat-left-quote-fill text-primary me-2"></i>
-                                Sample Model Answer:
-                              </div>
-                              <p className="small text-muted mb-0 lh-base" style={{ whiteSpace: 'pre-line' }}>
-                                {q.sample_answer}
-                              </p>
-                            </div>
-                          )}
-
-                          <div className="text-end mt-3">
-                            <button
-                              className="btn btn-link btn-sm text-decoration-none text-muted"
-                              onClick={() => setExpandedQuestionId(null)}
-                            >
-                              Hide Solution <i className="bi bi-chevron-up ms-1"></i>
-                            </button>
-                          </div>
-                        </div>
+                  {/* Expandable Ideal Talking Points */}
+                  {isExpanded && (
+                    <div
+                      className="mt-3 p-3 rounded-4"
+                      style={{ backgroundColor: '#F8FAFC', border: '1px solid #E2E8F0' }}
+                    >
+                      <div className="small fw-bold text-dark mb-2">
+                        <i className="bi bi-lightbulb-fill me-2" style={{ color: '#4F46E5' }}></i>
+                        Ideal Answer Key Points &amp; Rubric
+                      </div>
+                      {points.length > 0 ? (
+                        <ul className="mb-0 ps-3 small text-muted" style={{ lineHeight: 1.6 }}>
+                          {points.map((pt, i) => (
+                            <li key={i}>{pt}</li>
+                          ))}
+                        </ul>
                       ) : (
-                        <div className="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
-                          <span className="small text-muted">
-                            {q.ideal_points?.length || 0} Key evaluation criteria
-                          </span>
-                          <button
-                            className="btn btn-outline-primary btn-sm px-3"
-                            onClick={() => setExpandedQuestionId(q.id)}
-                          >
-                            View Ideal Answer & Points <i className="bi bi-chevron-down ms-1"></i>
-                          </button>
-                        </div>
+                        <p className="small text-muted mb-0">
+                          Structure your response clearly: define the core concept, walk through a concrete project example, and highlight measurable outcomes.
+                        </p>
                       )}
                     </div>
+                  )}
+
+                  {/* Footer Actions */}
+                  <div className="pt-3 mt-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpand(q.id)}
+                      className="btn btn-sm fw-semibold px-3"
+                      style={{ backgroundColor: '#F1F5F9', color: '#334155', borderRadius: '8px' }}
+                    >
+                      <i className={`bi ${isExpanded ? 'bi-chevron-up' : 'bi-chevron-down'} me-1`}></i>
+                      {isExpanded ? 'Hide Key Points' : 'View Key Points'}
+                    </button>
+
+                    <Link
+                      to="/mock-interview"
+                      state={{ category: q.category || 'Technical' }}
+                      className="btn btn-sm fw-semibold px-3"
+                      style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
+                    >
+                      Practice {q.category || 'Technical'} Round <i className="bi bi-arrow-right ms-1"></i>
+                    </Link>
                   </div>
                 </div>
               );
