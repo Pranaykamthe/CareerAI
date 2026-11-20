@@ -1,8 +1,9 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link, Outlet } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ProtectedRoute } from './components/common/ProtectedRoute';
 import { Navbar } from './components/layout/Navbar';
+import { Footer } from './components/layout/Footer';
 
 // Auth Pages
 import Login from './pages/auth/Login';
@@ -28,45 +29,14 @@ import InterviewHistory from './pages/candidate/InterviewHistory';
 // Admin Pages
 import AdminDashboard from './pages/admin/AdminDashboard';
 
-// Candidate-Only Footer
-const CandidateFooter = () => (
-  <footer className="bg-white border-top py-3 mt-auto shadow-sm">
-    <div className="container-fluid px-4 d-flex flex-column flex-sm-row justify-content-between align-items-center gap-2">
-      <div className="small text-muted">
-        &copy; {new Date().getFullYear()} <strong className="text-primary">CareerAI</strong>. All rights reserved.
-      </div>
-      <div className="d-flex gap-3 small">
-        <Link to="/dashboard" className="text-decoration-none text-muted">
-          Dashboard
-        </Link>
-        <Link to="/resume-builder" className="text-decoration-none text-muted">
-          AI Builder
-        </Link>
-        <Link to="/jobs" className="text-decoration-none text-muted">
-          Jobs
-        </Link>
-        <Link to="/applications" className="text-decoration-none text-muted">
-          Applications
-        </Link>
-        <Link to="/interview-history" className="text-decoration-none text-muted">
-          History
-        </Link>
-        <Link to="/profile" className="text-decoration-none text-muted">
-          Profile
-        </Link>
-      </div>
-    </div>
-  </footer>
-);
-
-// Candidate-Only Layout
+// Candidate-Only Layout (Uses your new Footer.js component)
 const CandidateLayout = () => (
   <div className="d-flex flex-column min-vh-100 bg-light">
     <Navbar />
     <main className="flex-grow-1">
       <Outlet />
     </main>
-    <CandidateFooter />
+    <Footer />
   </div>
 );
 

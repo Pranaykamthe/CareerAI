@@ -1,18 +1,102 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+:root {
+  --careerai-primary: #4F46E5;
+  --careerai-primary-hover: #4338CA;
+  --careerai-primary-soft: #EEF2FF;
+  --careerai-bg: #F8FAFC;
+  --careerai-border: #E2E8F0;
+  --careerai-text: #0F172A;
+  --careerai-muted: #64748B;
+}
+
 body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--careerai-bg);
+  color: var(--careerai-text);
   -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* Unify Bootstrap Primary & Custom Primary Buttons to CareerAI Indigo (#4F46E5) */
+.btn-primary,
+.btn-primary-custom {
+  background-color: var(--careerai-primary) !important;
+  border-color: var(--careerai-primary) !important;
+  color: #FFFFFF !important;
+  font-weight: 600;
+  border-radius: 10px;
+  transition: all 0.18s ease;
 }
 
-/* Hide Microsoft Edge / IE native password reveal & clear icons */
+.btn-primary:hover,
+.btn-primary:focus,
+.btn-primary-custom:hover,
+.btn-primary-custom:focus {
+  background-color: var(--careerai-primary-hover) !important;
+  border-color: var(--careerai-primary-hover) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.24) !important;
+}
+
+.btn-outline-primary {
+  color: var(--careerai-primary) !important;
+  border-color: var(--careerai-primary) !important;
+  border-radius: 10px;
+  font-weight: 500;
+  transition: all 0.18s ease;
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--careerai-primary) !important;
+  color: #FFFFFF !important;
+}
+
+.text-primary {
+  color: var(--careerai-primary) !important;
+}
+
+:root,
+[data-bs-theme="light"] {
+  --bs-primary: #4F46E5;
+  --bs-primary-rgb: 79, 70, 229;
+}
+
+.bg-primary {
+  background-color: rgba(79, 70, 229, var(--bs-bg-opacity, 1)) !important;
+}
+
+.bg-primary-subtle {
+  background-color: #EEF2FF !important;
+  color: #4F46E5 !important;
+}
+
+/* Consistent SaaS Card Styling */
+.card {
+  border-radius: 16px;
+  border: 1px solid var(--careerai-border);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hover-shadow:hover,
+.hover-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.07) !important;
+}
+
+/* Footer Link & Social Button Hover Polish */
+footer a:hover {
+  color: var(--careerai-primary) !important;
+}
+
+footer .btn.rounded-circle:hover {
+  background-color: var(--careerai-primary-soft) !important;
+  color: var(--careerai-primary) !important;
+  border-color: #C7D2FE !important;
+  transform: translateY(-1px);
+}
+
+/* Hide Native Browser Password Reveal Eye (Prevents Double Eye Icons in Edge) */
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
