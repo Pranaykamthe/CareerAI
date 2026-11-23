@@ -1,6 +1,10 @@
 import api from './api';
 
 export const resumeService = {
+  // ==========================================
+  // 1. Core Resume Management & ATS Analysis
+  // ==========================================
+
   getResumes: async () => {
     const response = await api.get('/resumes/');
     return response.data;
@@ -14,11 +18,8 @@ export const resumeService = {
   uploadResume: async (file, onUploadProgress) => {
     const formData = new FormData();
     formData.append('file', file);
-
     const response = await api.post('/resumes/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress,
     });
     return response.data;
@@ -62,16 +63,16 @@ export const resumeService = {
     link.parentNode.removeChild(link);
   },
 
-  // Groq AI Resume-to-Profile Auto-Fill
+  // ==========================================
+  // 2. Groq AI Resume-to-Profile Auto-Fill
+  // ==========================================
+
   autofillProfileFromFile: async (file, saveToProfile = true) => {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('save_to_profile', saveToProfile ? 'true' : 'false');
-
     const response = await api.post('/resumes/autofill-profile/', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
+      headers: { 'Content-Type': 'multipart/form-data' },
     });
     return response.data;
   },
@@ -84,20 +85,51 @@ export const resumeService = {
     return response.data;
   },
 
-  // AI Resume Builder & Groq ATS Improvements
+  // ==========================================
+  // 3. AI Resume Builder, ATS Auto-Fix & Cover Letter
+  // ==========================================
+
   getDrafts: async () => (await api.get('/resumes/builder/')).data,
   createDraft: async (payload = {}) => (await api.post('/resumes/builder/', payload)).data,
   updateDraft: async (id, payload) => (await api.put(`/resumes/builder/${id}/`, payload)).data,
+  deleteDraft: async (id) => (await api.delete(`/resumes/builder/${id}/`)).data,
   aiImproveSection: async (payload) => (await api.post('/resumes/builder/ai-improve/', payload)).data,
   autoFixATS: async (payload) => (await api.post('/resumes/builder/auto-fix-ats/', payload)).data,
-  exportDocx: async (draftData) => {
-    const response = await api.post('/resumes/builder/export-docx/', draftData, { responseType: 'blob' });
+
+  generateCoverLetter: async (payload) => {
+    const response = await api.post('/resumes/cover-letter/', payload);
+    return response.data;
+  },
+
+  exportCoverLetterDocx: async (payload) => {
+    const response = await api.post('/resumes/cover-letter/export-docx/', payload, {
+      responseType: 'blob',
+    });
     const url = window.URL.createObjectURL(new Blob([response.data]));
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `${draftData.personal_info?.full_name || 'Resume'}_CareerAI.docx`);
+    const safeCompany = (payload.company_name || 'Company').replace(/[^a-zA-Z0-9_-]/g, '_');
+    link.setAttribute('download', `Cover_Letter_${safeCompany}.docx`);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  },
+
+  exportDocx: async (draftData) => {
+    const response = await api.post('/resumes/builder/export-docx/', draftData, {
+      responseType: 'blob',
+    });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `${draftData.personal_info?.full_name || 'Resume'}_CareerAI.docx`
+    );
     document.body.appendChild(link);
     link.click();
     link.remove();
   },
 };
+
+export default resumeService;

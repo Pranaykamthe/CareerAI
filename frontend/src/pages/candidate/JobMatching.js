@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../../services/api';
 import { resumeService } from '../../services/resumeService';
 import { applicationService } from '../../services/applicationService';
 
 const JobMatching = () => {
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const focusedJobId = searchParams.get('jobId');
 
@@ -45,7 +46,6 @@ const JobMatching = () => {
         ? res.data
         : res.data?.matches || res.data?.results || [];
 
-      // Sort highest match score first
       const sorted = [...list].sort(
         (a, b) => Number(b.match_score ?? 0) - Number(a.match_score ?? 0)
       );
@@ -107,6 +107,21 @@ const JobMatching = () => {
     }
   };
 
+  const handleTailorResume = (jobObj, missingSkills = []) => {
+    navigate('/resume-builder', {
+      state: {
+        targetJob: {
+          id: jobObj?.id || jobObj?.job_id,
+          title: jobObj?.title || jobObj?.job_title || '',
+          company: jobObj?.company || '',
+          description: jobObj?.description || '',
+          required_skills: jobObj?.required_skills || [],
+          missing_skills: missingSkills,
+        },
+      },
+    });
+  };
+
   const getScoreTheme = (score) => {
     if (score >= 80) return { color: '#10B981', bg: '#ECFDF5', label: 'Strong Fit' };
     if (score >= 60) return { color: '#4F46E5', bg: '#EEF2FF', label: 'Good Match' };
@@ -122,7 +137,8 @@ const JobMatching = () => {
     return score >= minScoreFilter && (titleMatch || companyMatch);
   });
 
-  const bestScore = matches.length > 0 ? Math.max(...matches.map((m) => Number(m.match_score ?? 0))) : 0;
+  const bestScore =
+    matches.length > 0 ? Math.max(...matches.map((m) => Number(m.match_score ?? 0))) : 0;
   const strongFitsCount = matches.filter((m) => Number(m.match_score ?? 0) >= 75).length;
 
   const cardStyle = {
@@ -203,7 +219,7 @@ const JobMatching = () => {
                 ) : (
                   resumes.map((r) => (
                     <option key={r.id} value={r.id}>
-                      {r.filename || r.file?.split('/').pop() || `Resume #${r.id}`}{' '}
+                      {r.file_name || r.filename || r.file?.split('/').pop() || `Resume #${r.id}`}{' '}
                       {r.is_primary || r.is_default ? '(Primary)' : ''}
                     </option>
                   ))
@@ -215,21 +231,27 @@ const JobMatching = () => {
           <div className="col-4 col-lg-2">
             <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
               <div className="small text-muted fw-semibold mb-1">Roles Scored</div>
-              <div className="fw-bold fs-3" style={{ color: '#0F172A' }}>{matches.length}</div>
+              <div className="fw-bold fs-3" style={{ color: '#0F172A' }}>
+                {matches.length}
+              </div>
             </div>
           </div>
 
           <div className="col-4 col-lg-2">
             <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
               <div className="small text-muted fw-semibold mb-1">Best Match</div>
-              <div className="fw-bold fs-3" style={{ color: '#10B981' }}>{bestScore}%</div>
+              <div className="fw-bold fs-3" style={{ color: '#10B981' }}>
+                {bestScore}%
+              </div>
             </div>
           </div>
 
           <div className="col-4 col-lg-2">
             <div className="card bg-white p-3 p-md-4 h-100 text-center" style={cardStyle}>
               <div className="small text-muted fw-semibold mb-1">Strong Fits (75%+)</div>
-              <div className="fw-bold fs-3" style={{ color: '#4F46E5' }}>{strongFitsCount}</div>
+              <div className="fw-bold fs-3" style={{ color: '#4F46E5' }}>
+                {strongFitsCount}
+              </div>
             </div>
           </div>
         </div>
@@ -266,7 +288,7 @@ const JobMatching = () => {
                   key={pill.min}
                   type="button"
                   onClick={() => setMinScoreFilter(pill.min)}
-                  className="btn btn-sm fw-semibold px-3 py-1.5"
+                  className="btn btn-sm fw-semibold px-3 py-1"
                   style={{
                     borderRadius: '8px',
                     fontSize: '12px',
@@ -345,14 +367,14 @@ const JobMatching = () => {
                         </div>
                         <div>
                           <span
-                            className="badge rounded-pill px-2.5 py-0.5 fw-semibold mb-1"
+                            className="badge rounded-pill px-2 py-1 fw-semibold mb-1"
                             style={{ backgroundColor: theme.bg, color: theme.color, fontSize: '11px' }}
                           >
                             {theme.label}
                           </span>
                           <h5 className="fw-bold text-dark mb-1">{job.title || item.job_title}</h5>
                           <div className="text-muted small">
-                            <strong className="text-dark fw-semibold">{job.company}</strong> •{' '}
+                            <strong className="text-dark fw-semibold">{job.company}</strong> &bull;{' '}
                             {job.location || 'Remote'}
                           </div>
                           {job.salary_range && (
@@ -403,7 +425,9 @@ const JobMatching = () => {
                               </span>
                             ))
                           ) : (
-                            <span className="small text-success fw-medium">All required skills matched!</span>
+                            <span className="small text-success fw-medium">
+                              All required skills matched!
+                            </span>
                           )}
                         </div>
                       </div>
@@ -414,7 +438,14 @@ const JobMatching = () => {
                       <div className="d-flex align-items-center gap-3">
                         <div className="position-relative d-inline-flex align-items-center justify-content-center">
                           <svg width="70" height="70" style={{ transform: 'rotate(-90deg)' }}>
-                            <circle cx="35" cy="35" r={ringRadius} stroke="#E2E8F0" strokeWidth="6" fill="transparent" />
+                            <circle
+                              cx="35"
+                              cy="35"
+                              r={ringRadius}
+                              stroke="#E2E8F0"
+                              strokeWidth="6"
+                              fill="transparent"
+                            />
                             <circle
                               cx="35"
                               cy="35"
@@ -433,7 +464,7 @@ const JobMatching = () => {
                         </div>
                       </div>
 
-                      <div className="d-flex gap-2">
+                      <div className="d-flex flex-wrap justify-content-end gap-2">
                         <button
                           type="button"
                           onClick={() => setSelectedMatchModal(item)}
@@ -441,6 +472,19 @@ const JobMatching = () => {
                           style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
                         >
                           Scorecard
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleTailorResume(job, missingSkills)}
+                          className="btn btn-sm fw-semibold px-3"
+                          style={{
+                            backgroundColor: '#F8FAFC',
+                            color: '#0F172A',
+                            border: '1px solid #CBD5E1',
+                            borderRadius: '8px',
+                          }}
+                        >
+                          <i className="bi bi-magic me-1 text-primary"></i> Tailor Resume
                         </button>
                         <button
                           type="button"
@@ -473,7 +517,8 @@ const JobMatching = () => {
               <div className="modal-header bg-white border-bottom px-4 py-3">
                 <div>
                   <h5 className="modal-title fw-bold text-dark mb-0">
-                    Compatibility Scorecard — {selectedMatchModal.job?.title || selectedMatchModal.job_title}
+                    Compatibility Scorecard &mdash;{' '}
+                    {selectedMatchModal.job?.title || selectedMatchModal.job_title}
                   </h5>
                   <div className="text-muted small">
                     {selectedMatchModal.job?.company || selectedMatchModal.company}
@@ -501,7 +546,9 @@ const JobMatching = () => {
                   {[
                     {
                       label: 'Technical & Core Skill Overlap (50% Weight)',
-                      score: Math.round(Number(selectedMatchModal.skill_score ?? selectedMatchModal.match_score ?? 0)),
+                      score: Math.round(
+                        Number(selectedMatchModal.skill_score ?? selectedMatchModal.match_score ?? 0)
+                      ),
                       color: '#4F46E5',
                     },
                     {
@@ -511,7 +558,9 @@ const JobMatching = () => {
                     },
                     {
                       label: 'Job Description Keyword Density (20% Weight)',
-                      score: Math.round(Number(selectedMatchModal.keyword_score ?? selectedMatchModal.match_score ?? 0)),
+                      score: Math.round(
+                        Number(selectedMatchModal.keyword_score ?? selectedMatchModal.match_score ?? 0)
+                      ),
                       color: '#2563EB',
                     },
                   ].map((bar, idx) => (
@@ -525,21 +574,25 @@ const JobMatching = () => {
                       <div className="progress" style={{ height: '7px', backgroundColor: '#E2E8F0' }}>
                         <div
                           className="progress-bar"
-                          style={{ width: `${bar.score}%`, backgroundColor: bar.color, borderRadius: '4px' }}
+                          style={{
+                            width: `${bar.score}%`,
+                            backgroundColor: bar.color,
+                            borderRadius: '4px',
+                          }}
                         ></div>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                {selectedMatchModal.explanation && (
+                {(selectedMatchModal.summary || selectedMatchModal.explanation) && (
                   <div className="bg-white p-4 rounded-4" style={{ border: '1px solid #E2E8F0' }}>
                     <h6 className="fw-bold text-dark mb-2">
                       <i className="bi bi-lightbulb-fill me-2" style={{ color: '#4F46E5' }}></i>
                       Matching Engine Summary
                     </h6>
                     <p className="small text-muted mb-0" style={{ lineHeight: 1.6 }}>
-                      {selectedMatchModal.explanation}
+                      {selectedMatchModal.summary || selectedMatchModal.explanation}
                     </p>
                   </div>
                 )}
@@ -553,6 +606,19 @@ const JobMatching = () => {
                   onClick={() => setSelectedMatchModal(null)}
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleTailorResume(
+                      selectedMatchModal.job || selectedMatchModal,
+                      selectedMatchModal.missing_skills || []
+                    )
+                  }
+                  className="btn btn-sm fw-semibold px-3"
+                  style={{ backgroundColor: '#EEF2FF', color: '#4F46E5', borderRadius: '8px' }}
+                >
+                  <i className="bi bi-magic me-1"></i> Tailor Resume for Role
                 </button>
                 <button
                   type="button"
