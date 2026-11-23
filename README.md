@@ -1,6 +1,6 @@
 # CareerAI — AI Resume & Job Matching Platform with AI Mock Interview System
 
-CareerAI is a full-stack career readiness web application that helps job seekers parse and score resumes against ATS criteria, build AI-optimized resumes, match with suitable jobs, identify skill gaps, track applications on a Kanban board, and practice AI-evaluated mock interviews.
+CareerAI is a full-stack career readiness web application that helps job seekers parse and score resumes against ATS criteria, build AI-optimized resumes, generate tailored cover letters, match with suitable jobs, identify skill gaps, track applications on a Kanban board, and practice AI-evaluated mock interviews.
 
 ---
 
@@ -8,7 +8,7 @@ CareerAI is a full-stack career readiness web application that helps job seekers
 
 - **Frontend:** React.js, HTML5, CSS3, Bootstrap 5, Chart.js, Axios
 - **Backend:** Python, Django, Django REST Framework (DRF)
-- **Authentication:** JSON Web Tokens (SimpleJWT) with Candidate & Admin role access
+- **Authentication & Security:** JSON Web Tokens (SimpleJWT) with Candidate & Admin role access, plus DRF `UserRateThrottle` (30 requests/hour on AI endpoints)
 - **Database:** SQLite (via Django ORM)
 - **Document & Image Processing:** PyPDF2, python-docx, Pillow
 - **AI Integration:** Groq Cloud LLM API with deterministic local fallback scoring
@@ -17,14 +17,24 @@ CareerAI is a full-stack career readiness web application that helps job seekers
 
 ## Key Features
 
-- **Resume Management & Parsing:** Upload `.pdf` and `.docx` resumes, extract contact info, skills, and sections automatically.
-- **ATS Resume Analyzer:** Get an overall ATS score, breakdown metrics, strengths, weaknesses, and improvement tips.
-- **AI Resume Builder:** Build and edit resumes with live A4 preview, Groq AI section improvements, automated ATS issue fixes, and `.docx` export.
+- **Resume Management & Parsing:** Upload `.pdf` and `.docx` resumes to extract contact info, skills, and sections automatically.
+- **ATS Resume Analyzer:** Get an overall 0–100 ATS score, breakdown metrics, strengths, weaknesses, and actionable improvement tips.
+- **AI Resume Builder & One-Click Tailoring:** Build and edit resumes with live A4 preview, Groq AI section improvements, automated ATS issue fixes, direct job-to-resume skill tailoring, and `.docx` export.
+- **AI Cover Letter Generator:** Generate role-specific cover letters tailored to your resume and target job description using Groq AI.
 - **Smart Profile & Groq Resume Auto-Fill:** Upload a resume to auto-populate profile details (headline, summary, skills, education, experience) and manage Candidate/Admin profile photos.
-- **Smart Job Matching & Skill Gap Analysis:** Calculate compatibility percentages against job postings and view matched vs. missing skills.
-- **Application Tracker:** Track job applications across stages (Saved, Applied, Screening, Interview, Offer, Rejected).
+- **Smart Job Matching & Skill Gap Analysis:** Calculate weighted compatibility scores (50% skill overlap, 30% experience alignment, 20% keyword match) and view matched vs. missing skills. Admin-created jobs are public, while external job descriptions pasted by candidates remain private to their account.
+- **Application Tracker:** Track job applications across 6 Kanban stages (Saved, Applied, Screening, Interview, Offer, Rejected).
 - **AI Mock Interview & Prep Hub:** Practice Technical, HR, and Behavioral (STAR) interviews with instant AI feedback and detailed post-interview reports.
+- **Global Command Palette (`Ctrl+K` / `⌘K`):** Quickly search and jump across saved jobs, resumes, applications, and interview sessions from anywhere in the app.
 - **Candidate & Admin Dashboards:** View personal readiness analytics or manage platform users, jobs, and question banks as an admin.
+
+---
+
+## Prerequisites
+
+- Python 3.10+
+- Node.js 18+ and npm
+- Groq API Key *(optional — the built-in deterministic fallback engine handles offline scoring if no key is provided)*
 
 ---
 
@@ -40,11 +50,22 @@ CareerAI is a full-stack career readiness web application that helps job seekers
 Open a terminal in the project root and run:
 
     python -m venv venv
-    .\venv\Scripts\Activate.ps1
-    pip install -r backend/requirements.txt
-    pip install Pillow
 
-Create a `.env` file inside the `backend/` folder and add:
+Activate the virtual environment:
+
+- **Windows (PowerShell):**
+
+    .\venv\Scripts\Activate.ps1
+
+- **macOS / Linux:**
+
+    source venv/bin/activate
+
+Install Python dependencies:
+
+    pip install -r backend/requirements.txt
+
+Create a `.env` file inside the `backend/` folder (or copy `backend/.env.example`) and add:
 
     SECRET_KEY=django-insecure-careerai-development-key
     DEBUG=True
@@ -97,8 +118,9 @@ The application will open at `http://localhost:3000`.
 - **Candidate & Admin Profile:** `GET, PUT /api/auth/profile/` | `POST, DELETE /api/auth/profile/photo/`
 - **Resumes & ATS Analysis:** `GET, POST /api/resumes/` | `POST /api/resumes/<id>/analyze/`
 - **Groq Resume-to-Profile Auto-Fill:** `POST /api/resumes/autofill-profile/`
-- **AI Resume Builder:** `GET, POST /api/resumes/builder/` | `POST /api/resumes/builder/ai-improve/` | `POST /api/resumes/builder/export-docx/`
+- **AI Resume Builder:** `GET, POST /api/resumes/builder/` | `POST /api/resumes/builder/ai-improve/` | `POST /api/resumes/builder/auto-fix-ats/` | `POST /api/resumes/builder/export-docx/`
+- **AI Cover Letter Generator:** `POST /api/resumes/cover-letter/`
 - **Jobs & Matching:** `GET, POST /api/jobs/` | `POST /api/jobs/match/`
-- **Application Tracker:** `GET, POST /api/applications/`
+- **Application Tracker & Skill Gaps:** `GET, POST /api/applications/` | `GET /api/applications/gap/<job_id>/`
 - **Mock Interviews & Reports:** `POST /api/interviews/sessions/start/` | `GET /api/interviews/sessions/<id>/report/`
 - **Dashboards:** `GET /api/dashboard/candidate/` | `GET /api/dashboard/admin/overview/`
