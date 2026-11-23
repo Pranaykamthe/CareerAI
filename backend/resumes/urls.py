@@ -11,10 +11,13 @@ from .views import (
     ResumeDraftDetailView,
     ResumeAIImproveSectionView,
     ResumeAutoFixATSView,
+    GenerateCoverLetterView,
+    ExportCoverLetterDocxView,
     ResumeExportDocxView,
 )
 
 urlpatterns = [
+    # Core Resume Management & ATS Analysis
     path('', ResumeListCreateView.as_view(), name='resume-list-create'),
     path('<int:pk>/', ResumeDetailView.as_view(), name='resume-detail'),
     path('<int:pk>/parse/', ResumeParseView.as_view(), name='resume-parse'),
@@ -25,10 +28,12 @@ urlpatterns = [
     # Groq AI Resume-to-Profile Auto-Fill
     path('autofill-profile/', ResumeAutofillProfileView.as_view(), name='resume-autofill-profile'),
 
-    # AI Resume Builder & Groq ATS Improvement Endpoints
+    # AI Resume Builder, Groq ATS Improvements & Cover Letter Generator
     path('builder/', ResumeDraftListCreateView.as_view(), name='resume-builder-list'),
     path('builder/<int:pk>/', ResumeDraftDetailView.as_view(), name='resume-builder-detail'),
     path('builder/ai-improve/', ResumeAIImproveSectionView.as_view(), name='resume-ai-improve'),
     path('builder/auto-fix-ats/', ResumeAutoFixATSView.as_view(), name='resume-auto-fix-ats'),
     path('builder/export-docx/', ResumeExportDocxView.as_view(), name='resume-export-docx'),
+    path('cover-letter/', GenerateCoverLetterView.as_view(), name='generate-cover-letter'),
+    path('cover-letter/export-docx/', ExportCoverLetterDocxView.as_view(), name='export-cover-letter-docx'),
 ]

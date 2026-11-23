@@ -1,6 +1,7 @@
 from django.db import models
 from django.conf import settings
 
+
 class Job(models.Model):
     JOB_TYPE_CHOICES = (
         ('Full-time', 'Full-time'),
@@ -24,13 +25,22 @@ class Job(models.Model):
         blank=True,
         related_name='created_jobs'
     )
+    is_public = models.BooleanField(
+        default=True,
+        help_text="True for Admin/platform jobs; False for private candidate-imported jobs"
+    )
     title = models.CharField(max_length=200)
     company = models.CharField(max_length=200)
     location = models.CharField(max_length=200, default='Remote')
     job_type = models.CharField(max_length=50, choices=JOB_TYPE_CHOICES, default='Full-time')
     experience_level = models.CharField(max_length=50, choices=EXPERIENCE_LEVEL_CHOICES, default='Mid Level')
     min_experience_years = models.PositiveIntegerField(default=1)
-    salary_range = models.CharField(max_length=100, blank=True, default='')
+    salary_range = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text="Compensation package in LPA (e.g. '₹12 - ₹18 LPA')"
+    )
     description = models.TextField()
     required_skills = models.JSONField(default=list, help_text="List of required technical skills")
     preferred_skills = models.JSONField(default=list, blank=True, help_text="List of preferred nice-to-have skills")
@@ -66,13 +76,13 @@ class JobMatch(models.Model):
     skill_score = models.PositiveIntegerField(default=0, help_text="Skill overlap score 0-100")
     experience_score = models.PositiveIntegerField(default=0, help_text="Experience alignment score 0-100")
     keyword_score = models.PositiveIntegerField(default=0, help_text="Keyword overlap score 0-100")
-    
+
     matched_skills = models.JSONField(default=list, blank=True)
     missing_skills = models.JSONField(default=list, blank=True)
     preferred_matched_skills = models.JSONField(default=list, blank=True)
     match_level = models.CharField(max_length=50, default='Moderate Match')
     summary = models.TextField(blank=True, default='')
-    
+
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

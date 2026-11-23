@@ -1,16 +1,15 @@
 import os
 import io
+import tempfile
 from django.http import FileResponse, HttpResponse, Http404
 from docx import Document
-from docx.shared import Pt, RGBColor
+from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from rest_framework import generics, status, permissions
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from accounts.models import Profile
-from accounts.serializers import ProfileSerializer
 from ai_services.factory import get_ai_service
 from .models import Resume, ResumeAnalysis, ResumeDraft
 from .serializers import (
@@ -20,6 +19,12 @@ from .serializers import (
 )
 from .parser import extract_resume_data
 from .analyzer import analyze_resume_text
+
+try:
+    from ai_services.throttles import GroqAIRateThrottle
+    AI_THROTTLE_CLASSES = [GroqAIRateThrottle]
+except ImportError:
+    AI_THROTTLE_CLASSES = []
 
 
 SAMPLE_RESUME_DEFAULT = {
@@ -31,16 +36,20 @@ SAMPLE_RESUME_DEFAULT = {
         "email": "john.doe@email.com",
         "phone": "+1 (555) 123-4567",
         "location": "San Francisco, CA",
-        "linkedin": "[linkedin.com/in/johndoe](https://linkedin.com/in/johndoe)",
-        "portfolio": "johndoe.dev"
+        "linkedin": "linkedin.com/in/johndoe",
+        "portfolio": "johndoe.dev",
     },
-    "summary": "Results-driven Software Engineer with experience building scalable web applications and cloud-based solutions. Skilled in JavaScript, Python, React, and Django. Passionate about creating efficient, user-centric products and collaborating with cross-functional teams.",
+    "summary": (
+        "Results-driven Software Engineer with experience building scalable web applications and "
+        "cloud-based solutions. Skilled in JavaScript, Python, React, and Django. Passionate about "
+        "creating efficient, user-centric products and collaborating with cross-functional teams."
+    ),
     "skills": {
         "Languages": "JavaScript, TypeScript, Python, Java, SQL",
         "Frontend": "React, HTML5, CSS3, Bootstrap",
         "Backend": "Django, Django REST Framework, Node.js, RESTful APIs",
         "Database": "PostgreSQL, SQLite, MongoDB",
-        "Tools": "Git, Docker, Postman, Linux"
+        "Tools": "Git, Docker, Postman, Linux",
     },
     "work_experience": [
         {
@@ -51,8 +60,8 @@ SAMPLE_RESUME_DEFAULT = {
             "bullets": [
                 "Developed and maintained scalable web applications using React, Python, and Django.",
                 "Improved API response performance by 35% through database query optimization.",
-                "Designed and implemented RESTful APIs serving 50K+ daily active users."
-            ]
+                "Designed and implemented RESTful APIs serving 50K+ daily active users.",
+            ],
         }
     ],
     "education": [
@@ -60,26 +69,26 @@ SAMPLE_RESUME_DEFAULT = {
             "degree": "Bachelor of Technology in Computer Science",
             "institution": "University Name",
             "location": "City, State",
-            "graduation_date": "May 2023"
+            "graduation_date": "May 2023",
         }
     ],
     "projects": [
         {
             "title": "CareerAI Platform",
-            "link": "[github.com/username/careerai](https://github.com/username/careerai)",
+            "link": "github.com/username/careerai",
             "bullets": [
                 "Built full-stack AI resume analyzer and mock interview simulator using React and Django.",
-                "Integrated Groq LLM API for automated answer evaluation and ATS scoring."
-            ]
+                "Integrated Groq LLM API for automated answer evaluation and ATS scoring.",
+            ],
         }
     ],
     "certifications": ["AWS Certified Cloud Practitioner"],
-    "achievements": ["Solved 300+ algorithmic problems across LeetCode and HackerRank"]
+    "achievements": ["Solved 300+ algorithmic problems across LeetCode and HackerRank"],
 }
 
 
 # ==========================================
-# Core Resume Management & ATS Analysis Views
+# 1. Core Resume Management & ATS Analysis Views
 # ==========================================
 
 class ResumeListCreateView(generics.ListCreateAPIView):
@@ -96,7 +105,7 @@ class ResumeListCreateView(generics.ListCreateAPIView):
             user=self.request.user,
             file_name=uploaded_file.name,
             file_size=uploaded_file.size,
-            file_type=ext
+            file_type=ext,
         )
         try:
             parsed_result = extract_resume_data(resume_instance.file.path, resume_instance.file_type)
@@ -108,7 +117,7 @@ class ResumeListCreateView(generics.ListCreateAPIView):
             analysis_result = analyze_resume_text(resume_instance.raw_text, parsed_result)
             ResumeAnalysis.objects.update_or_create(
                 resume=resume_instance,
-                defaults=analysis_result
+                defaults=analysis_result,
             )
         except Exception:
             pass
@@ -141,16 +150,22 @@ class ResumeParseView(APIView):
             analysis_result = analyze_resume_text(resume.raw_text, parsed_result)
             analysis_obj, _ = ResumeAnalysis.objects.update_or_create(
                 resume=resume,
-                defaults=analysis_result
+                defaults=analysis_result,
             )
 
-            return Response({
-                "message": "Resume parsed and analyzed successfully.",
-                "resume": ResumeSerializer(resume, context={'request': request}).data,
-                "analysis": ResumeAnalysisSerializer(analysis_obj).data
-            }, status=status.HTTP_200_OK)
+            return Response(
+                {
+                    "message": "Resume parsed and analyzed successfully.",
+                    "resume": ResumeSerializer(resume, context={'request': request}).data,
+                    "analysis": ResumeAnalysisSerializer(analysis_obj).data,
+                },
+                status=status.HTTP_200_OK,
+            )
         except Exception as e:
-            return Response({"error": f"Failed to process resume: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response(
+                {"error": f"Failed to process resume: {str(e)}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
 
 class ResumeAnalyzeView(APIView):
@@ -192,7 +207,7 @@ class ResumeAnalyzeView(APIView):
         analysis_data = analyze_resume_text(resume.raw_text, resume.parsed_data)
         analysis, _ = ResumeAnalysis.objects.update_or_create(
             resume=resume,
-            defaults=analysis_data
+            defaults=analysis_data,
         )
 
         return Response(ResumeAnalysisSerializer(analysis).data, status=status.HTTP_200_OK)
@@ -225,153 +240,127 @@ class DownloadResumeView(APIView):
             return Response({"error": "Resume not found."}, status=status.HTTP_404_NOT_FOUND)
 
 
-# ==========================================================
-# Groq AI Resume-to-Profile Auto-Fill Endpoint
-# ==========================================================
+# ==========================================
+# 2. Resume-to-Profile Auto-Fill (Groq AI)
+# ==========================================
 
 class ResumeAutofillProfileView(APIView):
-    """
-    Accepts either:
-      - multipart/form-data with 'file' (.pdf or .docx) -> saves Resume, parses via Groq AI, and auto-fills Profile
-      - JSON with 'resume_id' -> parses existing Resume via Groq AI and auto-fills Profile
-    Optional flag: 'save_to_profile' (default True).
-    """
     permission_classes = [IsAuthenticated]
+    throttle_classes = AI_THROTTLE_CLASSES
 
     def post(self, request):
         uploaded_file = request.FILES.get('file')
         resume_id = request.data.get('resume_id')
-        save_flag = str(request.data.get('save_to_profile', 'true')).lower() != 'false'
+        save_flag = str(request.data.get('save_to_profile', 'true')).lower() in ('true', '1', 'yes')
 
-        resume = None
+        raw_text = ""
+
         if uploaded_file:
             ext = os.path.splitext(uploaded_file.name)[1].lower()
-            if ext not in ['.pdf', '.docx']:
+            if ext not in ('.pdf', '.docx'):
                 return Response(
-                    {"error": "Unsupported file format. Please upload a PDF or DOCX resume."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            if uploaded_file.size > 10 * 1024 * 1024:
-                return Response(
-                    {"error": "File size exceeds the 10MB limit."},
-                    status=status.HTTP_400_BAD_REQUEST
+                    {"error": "Unsupported file format. Please upload a PDF or DOCX file."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            resume = Resume.objects.create(
-                user=request.user,
-                file=uploaded_file,
-                file_name=uploaded_file.name,
-                file_size=uploaded_file.size,
-                file_type=ext.replace('.', '')
-            )
-            parsed_result = extract_resume_data(resume.file.path, resume.file_type)
-            resume.raw_text = parsed_result.get('raw_text', '')
-            resume.parsed_data = parsed_result
-            resume.is_parsed = True
-            resume.save()
-
+            temp_path = None
             try:
-                analysis_result = analyze_resume_text(resume.raw_text, parsed_result)
-                ResumeAnalysis.objects.update_or_create(resume=resume, defaults=analysis_result)
-            except Exception:
-                pass
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    for chunk in uploaded_file.chunks():
+                        tmp.write(chunk)
+                    temp_path = tmp.name
+
+                parsed = extract_resume_data(temp_path, ext.lstrip('.'))
+                raw_text = parsed.get('raw_text', '')
+            except Exception as exc:
+                return Response(
+                    {"error": f"Failed to read uploaded resume: {str(exc)}"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+
         elif resume_id:
             resume = Resume.objects.filter(pk=resume_id, user=request.user).first()
             if not resume:
-                return Response({"error": "Selected resume not found."}, status=status.HTTP_404_NOT_FOUND)
+                return Response({"error": "Resume not found."}, status=status.HTTP_404_NOT_FOUND)
+            if not resume.raw_text:
+                parsed = extract_resume_data(resume.file.path, resume.file_type)
+                resume.raw_text = parsed.get('raw_text', '')
+                resume.parsed_data = parsed
+                resume.is_parsed = True
+                resume.save()
+            raw_text = resume.raw_text
         else:
-            resume = Resume.objects.filter(user=request.user, is_primary=True).first() or Resume.objects.filter(user=request.user).first()
-            if not resume:
-                return Response(
-                    {"error": "Please upload a PDF/DOCX resume or select an existing resume."},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
+            return Response(
+                {"error": "Provide either a resume file or a valid resume_id."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
-        if not resume.raw_text:
-            parsed_result = extract_resume_data(resume.file.path, resume.file_type)
-            resume.raw_text = parsed_result.get('raw_text', '')
-            resume.parsed_data = parsed_result
-            resume.is_parsed = True
-            resume.save()
+        if not raw_text.strip():
+            return Response(
+                {"error": "Could not extract readable text from the resume."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         ai = get_ai_service()
-        extracted = ai.extract_profile_from_resume(resume.raw_text, resume.parsed_data)
-
-        profile, _ = Profile.objects.get_or_create(user=request.user)
+        extracted = ai.extract_profile_from_resume(raw_text)
 
         if save_flag:
-            # Update User first/last name if extracted and currently blank
-            full_name = (extracted.get('full_name') or '').strip()
-            if full_name and not request.user.first_name:
-                parts = full_name.split(' ', 1)
-                request.user.first_name = parts[0][:150]
-                if len(parts) > 1:
-                    request.user.last_name = parts[1][:150]
-                request.user.save(update_fields=['first_name', 'last_name'])
+            user = request.user
+            if extracted.get('first_name'):
+                user.first_name = extracted['first_name'][:150]
+            if extracted.get('last_name'):
+                user.last_name = extracted['last_name'][:150]
+            user.save(update_fields=['first_name', 'last_name'])
 
-            # Map extracted fields onto Profile safely regardless of field naming variant
-            field_mappings = {
-                'headline': extracted.get('headline'),
-                'target_role': extracted.get('target_role'),
-                'experience_years': extracted.get('experience_years'),
-                'phone': extracted.get('phone'),
-                'location': extracted.get('location'),
-                'linkedin_url': extracted.get('linkedin_url'),
-                'linkedin': extracted.get('linkedin_url'),
-                'github_url': extracted.get('github_url'),
-                'github': extracted.get('github_url'),
-                'portfolio_url': extracted.get('portfolio_url'),
-                'portfolio': extracted.get('portfolio_url'),
-                'bio': extracted.get('summary'),
-                'summary': extracted.get('summary'),
-            }
+            profile = getattr(user, 'profile', None)
+            if profile:
+                field_map = {
+                    'phone': 'phone',
+                    'headline': 'headline',
+                    'target_role': 'target_role',
+                    'bio': 'bio',
+                    'location': 'location',
+                    'linkedin_url': 'linkedin_url',
+                    'github_url': 'github_url',
+                    'portfolio_url': 'portfolio_url',
+                }
+                for src_key, model_field in field_map.items():
+                    if extracted.get(src_key) and hasattr(profile, model_field):
+                        setattr(profile, model_field, extracted[src_key])
 
-            for attr, val in field_mappings.items():
-                if hasattr(profile, attr) and val not in (None, ''):
-                    setattr(profile, attr, val)
+                if extracted.get('experience_years') is not None and hasattr(profile, 'experience_years'):
+                    try:
+                        profile.experience_years = float(extracted['experience_years'])
+                    except (TypeError, ValueError):
+                        pass
 
-            # Handle JSON list fields (skills / skills_list, education, experience / work_experience)
-            extracted_skills = extracted.get('skills') or []
-            if extracted_skills:
-                if hasattr(profile, 'skills_list'):
-                    existing = profile.skills_list if isinstance(profile.skills_list, list) else []
-                    merged = list(dict.fromkeys(existing + extracted_skills))
-                    profile.skills_list = merged
-                elif hasattr(profile, 'skills'):
-                    existing = profile.skills if isinstance(profile.skills, list) else []
-                    merged = list(dict.fromkeys(existing + extracted_skills))
-                    profile.skills = merged
+                if extracted.get('skills_list') and hasattr(profile, 'skills'):
+                    profile.skills = extracted['skills_list']
+                if extracted.get('education') and hasattr(profile, 'education'):
+                    profile.education = extracted['education']
+                if extracted.get('experience') and hasattr(profile, 'experience'):
+                    profile.experience = extracted['experience']
 
-            extracted_edu = extracted.get('education') or []
-            if extracted_edu and hasattr(profile, 'education'):
-                profile.education = extracted_edu
+                profile.save()
 
-            extracted_exp = extracted.get('experience') or []
-            if extracted_exp:
-                if hasattr(profile, 'work_experience'):
-                    profile.work_experience = extracted_exp
-                elif hasattr(profile, 'experience'):
-                    profile.experience = extracted_exp
-
-            profile.save()
-
-        try:
-            serialized_profile = ProfileSerializer(profile).data
-        except Exception:
-            serialized_profile = extracted
-
-        return Response({
-            "message": f"Profile auto-filled from {resume.file_name} using {extracted.get('provider', 'Groq AI')}.",
-            "provider": extracted.get('provider', 'Groq AI'),
-            "resume_id": resume.id,
-            "resume_name": resume.file_name,
-            "extracted_profile": extracted,
-            "profile": serialized_profile,
-        }, status=status.HTTP_200_OK)
+        return Response(
+            {
+                "message": "Profile extracted successfully.",
+                "saved_to_profile": save_flag,
+                "extracted_profile": extracted,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # ==========================================
-# AI Resume Builder & Groq Improver Views
+# 3. AI Resume Builder, Groq Improver & Cover Letter Views
 # ==========================================
 
 class ResumeDraftListCreateView(APIView):
@@ -389,7 +378,9 @@ class ResumeDraftListCreateView(APIView):
                     data.setdefault(k, v.copy())
                 else:
                     data.setdefault(k, v)
-            data['personal_info']['full_name'] = (request.user.get_full_name() or request.user.email.split('@')[0]).upper()
+            data['personal_info']['full_name'] = (
+                request.user.get_full_name() or request.user.email.split('@')[0]
+            ).upper()
             data['personal_info']['email'] = request.user.email
 
         serializer = ResumeDraftSerializer(data=data)
@@ -430,7 +421,9 @@ class ResumeDraftDetailView(APIView):
 
 
 class ResumeAIImproveSectionView(APIView):
+    """Uses Groq API to rewrite a specific section or bullet point."""
     permission_classes = [IsAuthenticated]
+    throttle_classes = AI_THROTTLE_CLASSES
 
     def post(self, request):
         section = request.data.get('section', 'summary')
@@ -438,22 +431,35 @@ class ResumeAIImproveSectionView(APIView):
         content = request.data.get('content') or request.data.get('original_text', '')
         target_role = request.data.get('target_role', 'Software Engineer')
         ats_issues = request.data.get('ats_issues', [])
+        target_job = request.data.get('target_job')
 
         if not str(content).strip():
             return Response({"error": "Content is required."}, status=status.HTTP_400_BAD_REQUEST)
 
         ai = get_ai_service()
         if not hasattr(ai, 'improve_resume_section'):
-            return Response({"error": "Groq API key not configured in backend/.env"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"error": "Groq API key not configured in backend/.env"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
-        result = ai.improve_resume_section(section, action, content, target_role, ats_issues)
+        result = ai.improve_resume_section(
+            section,
+            action,
+            content,
+            target_role,
+            ats_issues,
+            target_job=target_job,
+        )
         if 'score_increase' not in result and 'estimated_score_boost' in result:
             result['score_increase'] = result['estimated_score_boost']
         return Response(result, status=status.HTTP_200_OK)
 
 
 class ResumeAutoFixATSView(APIView):
+    """Fetches ATS Analyzer weaknesses/recommendations and uses Groq API to auto-improve the resume."""
     permission_classes = [IsAuthenticated]
+    throttle_classes = AI_THROTTLE_CLASSES
 
     def post(self, request):
         resume_id = request.data.get('resume_id')
@@ -474,19 +480,141 @@ class ResumeAutoFixATSView(APIView):
 
         ai = get_ai_service()
         if not hasattr(ai, 'auto_fix_ats_issues'):
-            return Response({"error": "Groq API key not configured in backend/.env"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response(
+                {"error": "Groq API key not configured in backend/.env"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         try:
             improved = ai.auto_fix_ats_issues(draft_data, weaknesses, recommendations, target_role)
-            return Response({
-                "ats_weaknesses_addressed": weaknesses,
-                "improved_sections": improved
-            })
+            return Response(
+                {
+                    "ats_weaknesses_addressed": weaknesses,
+                    "improved_sections": improved,
+                },
+                status=status.HTTP_200_OK,
+            )
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
+class GenerateCoverLetterView(APIView):
+    """Generates a tailored 3-paragraph ATS-friendly cover letter using Groq AI."""
+    permission_classes = [IsAuthenticated]
+    throttle_classes = AI_THROTTLE_CLASSES
+
+    def post(self, request):
+        data = request.data
+        candidate_name = data.get('candidate_name') or request.user.get_full_name() or request.user.email
+        target_role = (data.get('target_role') or '').strip()
+        company_name = (data.get('company_name') or '').strip()
+        job_description = (data.get('job_description') or '').strip()
+        resume_summary = (data.get('resume_summary') or '').strip()
+        skills = data.get('skills') or []
+        tone = data.get('tone') or 'Professional & Confident'
+
+        if not target_role or not company_name:
+            return Response(
+                {'error': 'Both target_role and company_name are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        ai = get_ai_service()
+        result = ai.generate_cover_letter(
+            candidate_name=candidate_name,
+            target_role=target_role,
+            company_name=company_name,
+            job_description=job_description,
+            resume_summary=resume_summary,
+            skills=skills,
+            tone=tone,
+        )
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class ExportCoverLetterDocxView(APIView):
+    """Exports the generated AI Cover Letter as a formatted Word (.docx) document."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        data = request.data
+        personal = data.get('personal_info') or {}
+        candidate_name = (
+            data.get('candidate_name')
+            or personal.get('full_name')
+            or request.user.get_full_name()
+            or request.user.email
+        )
+        email = personal.get('email') or request.user.email
+        phone = personal.get('phone', '')
+        location = personal.get('location', '')
+        target_role = (data.get('target_role') or 'Position').strip()
+        company_name = (data.get('company_name') or 'Company').strip()
+        subject_line = (data.get('subject_line') or f"Application for {target_role} — {candidate_name}").strip()
+        cover_letter = (data.get('cover_letter') or '').strip()
+
+        if not cover_letter:
+            return Response(
+                {'error': 'Cover letter content is required to export.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        doc = Document()
+        for section in doc.sections:
+            section.top_margin = Inches(0.85)
+            section.bottom_margin = Inches(0.85)
+            section.left_margin = Inches(0.95)
+            section.right_margin = Inches(0.95)
+
+        # Candidate Header
+        name_p = doc.add_paragraph()
+        name_run = name_p.add_run(candidate_name.upper())
+        name_run.bold = True
+        name_run.font.size = Pt(16)
+        name_run.font.color.rgb = RGBColor(15, 23, 42)
+
+        contact_items = [x for x in [email, phone, location] if x]
+        if contact_items:
+            contact_p = doc.add_paragraph(" | ".join(contact_items))
+            contact_p.runs[0].font.size = Pt(10)
+            contact_p.runs[0].font.color.rgb = RGBColor(100, 116, 139)
+
+        # Subject Line
+        subj_p = doc.add_paragraph()
+        subj_label = subj_p.add_run("Subject: ")
+        subj_label.bold = True
+        subj_label.font.size = Pt(11)
+        subj_label.font.color.rgb = RGBColor(79, 70, 229)
+        subj_val = subj_p.add_run(subject_line)
+        subj_val.bold = True
+        subj_val.font.size = Pt(11)
+
+        # Body Paragraphs
+        for block in cover_letter.split('\n\n'):
+            cleaned = block.strip()
+            if cleaned:
+                bp = doc.add_paragraph(cleaned)
+                bp.paragraph_format.space_after = Pt(10)
+                bp.paragraph_format.line_spacing = 1.25
+                for r in bp.runs:
+                    r.font.size = Pt(11)
+                    r.font.color.rgb = RGBColor(30, 41, 59)
+
+        buffer = io.BytesIO()
+        doc.save(buffer)
+        buffer.seek(0)
+
+        safe_company = "".join(c if c.isalnum() or c in ('-', '_') else '_' for c in company_name)
+        response = HttpResponse(
+            buffer.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        )
+        response['Content-Disposition'] = f'attachment; filename="Cover_Letter_{safe_company}.docx"'
+        return response
+
+
 class ResumeExportDocxView(APIView):
+    """Generates a clean ATS-friendly DOCX matching the sample resume format."""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -494,6 +622,7 @@ class ResumeExportDocxView(APIView):
         p = data.get('personal_info', {})
         doc = Document()
 
+        # Header
         name_p = doc.add_paragraph()
         name_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
         run_name = name_p.add_run(p.get('full_name', 'CANDIDATE NAME').upper())
@@ -507,7 +636,9 @@ class ResumeExportDocxView(APIView):
         run_role.font.size = Pt(11)
         run_role.font.color.rgb = RGBColor(37, 99, 235)
 
-        contact_parts = [x for x in [p.get('email'), p.get('phone'), p.get('location'), p.get('linkedin'), p.get('portfolio')] if x]
+        contact_parts = [
+            x for x in [p.get('email'), p.get('phone'), p.get('location'), p.get('linkedin'), p.get('portfolio')] if x
+        ]
         contact_p = doc.add_paragraph(" | ".join(contact_parts))
         contact_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
@@ -524,11 +655,14 @@ class ResumeExportDocxView(APIView):
 
         if data.get('skills'):
             add_section_heading("Skills")
-            for cat, items in data['skills'].items():
-                if items:
-                    sp = doc.add_paragraph()
-                    sp.add_run(f"{cat}: ").bold = True
-                    sp.add_run(items)
+            if isinstance(data['skills'], dict):
+                for cat, items in data['skills'].items():
+                    if items:
+                        sp = doc.add_paragraph()
+                        sp.add_run(f"{cat}: ").bold = True
+                        sp.add_run(items if isinstance(items, str) else ", ".join(items))
+            elif isinstance(data['skills'], list):
+                doc.add_paragraph(", ".join(str(s) for s in data['skills']))
 
         if data.get('work_experience'):
             add_section_heading("Work Experience")
@@ -542,7 +676,9 @@ class ResumeExportDocxView(APIView):
             add_section_heading("Education")
             for edu in data['education']:
                 edp = doc.add_paragraph()
-                edp.add_run(f"{edu.get('degree', '')} | {edu.get('institution', '')} ({edu.get('graduation_date', '')})").bold = True
+                edp.add_run(
+                    f"{edu.get('degree', '')} | {edu.get('institution', '')} ({edu.get('graduation_date', '')})"
+                ).bold = True
 
         if data.get('projects'):
             add_section_heading("Projects")
@@ -569,7 +705,7 @@ class ResumeExportDocxView(APIView):
         buffer.seek(0)
         response = HttpResponse(
             buffer.getvalue(),
-            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
         )
         response['Content-Disposition'] = 'attachment; filename="CareerAI_Resume.docx"'
         return response
