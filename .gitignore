@@ -22,3 +22,6 @@ frontend/.pnp.js
 frontend/coverage/
 .DS_Store
 backend/media/
+
+# VS Code local workspace settings
+.vscode/
